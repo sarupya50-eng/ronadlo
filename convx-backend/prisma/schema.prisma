@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  bio          String?
+  avatarUrl    String?
+  genres       String[] @default([])
+  createdAt    DateTime @default(now())
+
+  roomsOwned   Room[]        @relation("RoomOwner")
+  memberships  RoomMember[]
+  messages     Message[]
+  tracksUpload Track[]
+}
+
+model Room {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  ownerId     String
+  owner       User     @relation("RoomOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+
+  members     RoomMember[]
+  messages    Message[]
+  queue       QueueItem[]
+}
+
+model RoomMember {
+  id       String   @id @default(cuid())
+  roomId   String
+  userId   String
+  role     String   @default("member") // "owner" | "mod" | "member"
+  joinedAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Track {
+  id         String   @id @default(cuid())
+  title      String
+  artist     String?
+  uploaderId String
+  fileUrl    String
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  uploader  User        @relation(fields: [uploaderId], references: [id])
+  queueItem QueueItem[]
+}
+
+model QueueItem {
+  id        String   @id @default(cuid())
+  roomId    String
+  trackId   String
+  position  Int
+  addedAt   DateTime @default(now())
+
+  room  Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id])
+}
