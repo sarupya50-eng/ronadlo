@@ -1,0 +1,1250 @@
+"use client";
+
+import { FormEvent, useEffect, useRef, useState } from "react";
+import YouTube, { YouTubePlayer } from "react-youtube";
+
+type Song = {
+  id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  thumbnail: string | null;
+  duration: string | null;
+};
+
+const featured = [
+  {
+    title: "Believer",
+    artist: "Imagine Dragons",
+    image:
+      "https://yt3.googleusercontent.com/weYQWfEwWNPOuAm34geXN1LkSYPlsJay78NnQgHC3PKsyZcdvBHIsMtqoFh3rioA4XgMdHMQd3h6vH6mbA=w500-h500-l90-rj",
+  },
+  {
+    title: "Blinding Lights",
+    artist: "The Weeknd",
+    image:
+      "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
+  },
+  {
+    title: "Starboy",
+    artist: "The Weeknd",
+    image:
+      "https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg",
+  },
+  {
+    title: "Heat Waves",
+    artist: "Glass Animals",
+    image:
+      "https://i.ytimg.com/vi/mRD0-GxqHVo/hqdefault.jpg",
+  },
+];
+
+export default function Home() {
+  const [query, setQuery] = useState("");
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [liked, setLiked] = useState<string[]>([]);
+  const [queue, setQueue] = useState<Song[]>([]);
+  const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
+  const [showQueue, setShowQueue] = useState(false);
+  const [volume, setVolume] = useState(0.8);
+  const [progress, setProgress] = useState(0);
+  const [seeking, setSeeking] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [lyricsError, setLyricsError] = useState(false);
+  const [lyricsPosition, setLyricsPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [draggingLyrics, setDraggingLyrics] = useState(false);
+  const [resizingPanel, setResizingPanel] = useState<string | null>(null);
+
+  const resizeRef = useRef({
+    panel: "",
+    startX: 0,
+    startY: 0,
+    startWidth: 0,
+    startHeight: 0,
+    startLeft: 0,
+    startTop: 0,
+    direction: "",
+  });
+
+  function startPanelResize(
+    e: React.PointerEvent,
+    panel: "lyrics" | "queue",
+    direction: string
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const element = e.currentTarget.parentElement;
+    if (!element) return;
+
+    const rect = element.getBoundingClientRect();
+
+    resizeRef.current = {
+      panel,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: rect.width,
+      startHeight: rect.height,
+      startLeft: rect.left,
+      startTop: rect.top,
+      direction,
+    };
+
+    setResizingPanel(panel);
+
+    const move = (event: PointerEvent) => {
+      const r = resizeRef.current;
+
+      let width = r.startWidth;
+      let height = r.startHeight;
+      let left = r.startLeft;
+      let top = r.startTop;
+
+      const dx = event.clientX - r.startX;
+      const dy = event.clientY - r.startY;
+
+      if (r.direction.includes("e")) {
+        width = r.startWidth + dx;
+      }
+
+      if (r.direction.includes("w")) {
+        width = r.startWidth - dx;
+        left = r.startLeft + dx;
+      }
+
+      if (r.direction.includes("s")) {
+        height = r.startHeight + dy;
+      }
+
+      if (r.direction.includes("n")) {
+        height = r.startHeight - dy;
+        top = r.startTop + dy;
+      }
+
+      width = Math.max(300, Math.min(width, window.innerWidth * 0.9));
+      height = Math.max(260, Math.min(height, window.innerHeight * 0.85));
+
+      const target = document.querySelector(
+        r.panel === "lyrics" ? ".lyrics-panel" : ".queue-panel"
+      ) as HTMLElement | null;
+
+      if (!target) return;
+
+        target.style.width = `${width}px`;
+        target.style.height = `${height}px`;
+
+        if (r.panel === "queue") {
+          target.style.right = "650px";
+        } else {
+          target.style.right = "30px";
+        }
+
+        target.style.left = "auto";
+        target.style.top = "auto";
+        target.style.bottom = "105px";
+    };
+
+    const stop = () => {
+      setResizingPanel(null);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  }
+
+  const lyricsDrag = useRef({
+    startX: 0,
+    startY: 0,
+    startLeft: 0,
+    startTop: 0,
+  });
+  const [lyrics, setLyrics] = useState<string[]>([
+  ]);
+
+  const [syncedLyrics, setSyncedLyrics] = useState<
+    { time: number; text: string }[]
+  >([]);
+  const [activeLyric, setActiveLyric] = useState(-1);
+  const playerRef = useRef<YouTubePlayer | null>(null);
+  const visualProgressRef = useRef(0);
+  const lastSyncTimeRef = useRef(0);
+  const lastSyncAtRef = useRef(0);
+  const lyricRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+
+  async function search(e?: FormEvent) {
+    e?.preventDefault();
+
+    if (!query.trim()) return;
+
+    try {
+      const response = await fetch(
+        `/api/search?q=${encodeURIComponent(query)}`
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSongs(data.results || []);
+      }
+    } catch {
+      console.error("Search failed");
+    }
+  }
+
+  function playSong(song: Song) {
+    if (currentSong?.id === song.id) {
+      setPlaying((value) => !value);
+      return;
+    }
+
+    setCurrentSong(song);
+    setPlaying(true);
+  }
+
+  function toggleLike(id: string) {
+    setLiked((old) =>
+      old.includes(id) ? old.filter((x) => x !== id) : [...old, id]
+    );
+  }
+
+  function addToQueue(song: Song) {
+    setQueue((old) => {
+      if (old.some((item) => item.id === song.id)) {
+        return old;
+      }
+
+      return [...old, song];
+    });
+  }
+
+  function removeFromQueue(id: string) {
+    setQueue((old) => old.filter((song) => song.id !== id));
+  }
+
+  function clearQueue() {
+    setQueue([]);
+  }
+
+  function nextSong() {
+    if (queue.length > 0) {
+      const [next, ...remaining] = queue;
+
+      setQueue(remaining);
+      setCurrentSong(next);
+      setPlaying(true);
+      return;
+    }
+
+    if (!currentSong || !songs.length) return;
+
+    const index = songs.findIndex((s) => s.id === currentSong.id);
+    const next = songs[(index + 1) % songs.length];
+
+    setCurrentSong(next);
+    setPlaying(true);
+  }
+
+  function previousSong() {
+    if (!currentSong || !songs.length) return;
+
+    const index = songs.findIndex((s) => s.id === currentSong.id);
+    const previous = songs[(index - 1 + songs.length) % songs.length];
+
+    setCurrentSong(previous);
+    setPlaying(true);
+  }
+
+  useEffect(() => {
+    setProgress(0);
+    setDuration(0);
+
+    let frame = 0;
+
+    const sync = () => {
+      const player = playerRef.current;
+
+      if (!player) {
+        frame = requestAnimationFrame(sync);
+        return;
+      }
+
+      const time = player.getCurrentTime();
+      const realDuration = player.getDuration();
+
+      if (Number.isFinite(realDuration) && realDuration > 0) {
+        setDuration(realDuration);
+      }
+
+      if (Number.isFinite(time)) {
+        setProgress(time);
+        visualProgressRef.current = time;
+        lastSyncTimeRef.current = time;
+        lastSyncAtRef.current = performance.now();
+
+        if (syncedLyrics.length > 0) {
+          let active = -1;
+
+          for (let i = 0; i < syncedLyrics.length; i++) {
+            if (time >= syncedLyrics[i].time) {
+              active = i;
+            } else {
+              break;
+            }
+          }
+
+          setActiveLyric(active);
+        }
+      }
+
+      frame = requestAnimationFrame(sync);
+    };
+
+    frame = requestAnimationFrame(sync);
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [currentSong, syncedLyrics]);
+
+  // Keep the active lyric centered while the song plays
+  useEffect(() => {
+    if (activeLyric < 0) return;
+
+    const element = lyricRefs.current[activeLyric];
+    if (!element) return;
+
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [activeLyric]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    if (playing) {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
+    }
+  }, [playing]);
+
+  useEffect(() => {
+    if (activeLyric < 0) return;
+
+    const lyric = lyricRefs.current[activeLyric];
+
+    if (lyric) {
+      lyric.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [activeLyric]);
+
+  useEffect(() => {
+    if (!currentSong || !showLyrics) return;
+
+    const song = currentSong;
+    let cancelled = false;
+
+    async function loadLyrics() {
+      setLyricsLoading(true);
+      setLyricsError(false);
+
+      try {
+        const cleanTitle = song.title
+          .replace(/\([^)]*\)/g, "")
+          .replace(/\[[^\]]*\]/g, "")
+          .replace(/official video/gi, "")
+          .replace(/official audio/gi, "")
+          .replace(/lyrics?/gi, "")
+          .replace(/x\s+.*$/i, "")
+          .trim();
+
+        const response = await fetch(
+          `/api/lyrics?track=${encodeURIComponent(
+            cleanTitle
+          )}&artist=${encodeURIComponent(song.artist)}`
+        );
+
+        const data = await response.json();
+
+        if (cancelled) return;
+
+        if (Array.isArray(data.lyrics) && data.lyrics.length > 0) {
+          setLyrics(data.lyrics);
+
+            // Parse synced LRC lyrics from the API
+            if (typeof data.syncedLyrics === "string") {
+              const parsed = data.syncedLyrics
+                .split(/\r?\n/)
+                .map((line: string) => {
+                  const match = line.match(
+                    /^\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/
+                  );
+
+                  if (!match) return null;
+
+                  return {
+                    time:
+                      Number(match[1]) * 60 +
+                      Number(match[2]),
+                    text: match[3].trim(),
+                  };
+                })
+                .filter(
+                  (
+                    item: { time: number; text: string } | null
+                  ): item is { time: number; text: string } =>
+                    item !== null && item.text.length > 0
+                );
+
+              setSyncedLyrics(parsed);
+              setActiveLyric(-1);
+            } else {
+              setSyncedLyrics([]);
+              setActiveLyric(-1);
+            }
+
+          setLyricsError(false);
+        } else {
+          setLyrics([
+            "No lyrics found for this song.",
+            "Try another version of the track.",
+          ]);
+          setLyricsError(true);
+        }
+      } catch (error) {
+        console.error("Lyrics loading failed:", error);
+
+        if (!cancelled) {
+          setLyricsError(true);
+          setLyrics([
+            "Couldn't load lyrics.",
+            "Please try again.",
+          ]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLyricsLoading(false);
+        }
+      }
+    }
+
+    loadLyrics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSong, showLyrics]);
+
+  function startLyricsDrag(
+    e: React.PointerEvent<HTMLDivElement>
+  ) {
+    const panel = e.currentTarget.parentElement;
+    if (!panel) return;
+
+    const rect = panel.getBoundingClientRect();
+
+    lyricsDrag.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+    };
+
+    setDraggingLyrics(true);
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function moveLyricsDrag(
+    e: React.PointerEvent<HTMLDivElement>
+  ) {
+    if (!draggingLyrics) return;
+
+    const dx = e.clientX - lyricsDrag.current.startX;
+    const dy = e.clientY - lyricsDrag.current.startY;
+
+    setLyricsPosition({
+      x: lyricsDrag.current.startLeft + dx,
+      y: lyricsDrag.current.startTop + dy,
+    });
+  }
+
+  function stopLyricsDrag(
+    e: React.PointerEvent<HTMLDivElement>
+  ) {
+    if (!draggingLyrics) return;
+
+    setDraggingLyrics(false);
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+  }
+
+  function moveQueueItem(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+
+    setQueue((old) => {
+      if (from >= old.length || to >= old.length) return old;
+
+      const updated = [...old];
+      const [moved] = updated.splice(from, 1);
+      updated.splice(to, 0, moved);
+
+      return updated;
+    });
+  }
+
+  return (
+
+    <main>
+
+
+        <aside className="sidebar">
+          <div className="logo">
+            <div className="logo-mark">A</div>
+            <div>
+              <strong>AURALIS</strong>
+              <span>MUSIC</span>
+            </div>
+          </div>
+
+          <div className="menu-title">MENU</div>
+
+          <nav>
+            <button className="nav-item active">
+              <span className="nav-icon">⌂</span>
+              <span>Home</span>
+            </button>
+
+            <button className="nav-item">
+              <span className="nav-icon">⌕</span>
+              <span>Search</span>
+            </button>
+
+            <button className="nav-item">
+              <span className="nav-icon">♡</span>
+              <span>Liked Songs</span>
+            </button>
+
+            <button className="nav-item">
+              <span className="nav-icon">▣</span>
+              <span>Library</span>
+            </button>
+          </nav>
+
+          <div className="sidebar-divider" />
+
+          <div className="menu-title">YOUR MUSIC</div>
+
+          <nav>
+            <button className="nav-item">
+              <span className="nav-icon">♫</span>
+              <span>Recently Played</span>
+            </button>
+
+            <button className="nav-item">
+              <span className="nav-icon">✦</span>
+              <span>Made For You</span>
+            </button>
+
+            <button className="nav-item">
+              <span className="nav-icon">◉</span>
+              <span>Albums</span>
+            </button>
+          </nav>
+
+          <div className="sidebar-bottom">
+            <div className="mini-badge">✦</div>
+            <div>
+              <b>Auralis Music</b>
+              <span>Premium sound.</span>
+            </div>
+          </div>
+        </aside>
+
+      <section className="content">
+        <header className="topbar">
+          <div>
+            <div className="eyebrow">AURALIS MUSIC ENGINE</div>
+            <h1>Premium sound.</h1>
+            <p className="subtitle">
+              Discover music without limits.
+            </p>
+          </div>
+
+          <form className="search" onSubmit={search}>
+            <span>⌕</span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search songs, artists, albums..."
+            />
+            <button>Search</button>
+          </form>
+        </header>
+
+        <section className="hero">
+          <div className="hero-glow" />
+
+          <div className="hero-text">
+            <div className="hero-label">✦ AURALIS MUSIC</div>
+            <h2>Your music.<br />Your atmosphere.</h2>
+            <p>
+              Search millions of songs and discover your next favorite sound.
+            </p>
+
+            <form className="hero-search" onSubmit={search}>
+              <span>⌕</span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="What do you want to listen to?"
+              />
+              <button>Explore</button>
+            </form>
+          </div>
+
+          <div className="hero-art">
+            <div className="disc">
+              <div className="disc-center">A</div>
+            </div>
+          </div>
+        </section>
+
+        {songs.length > 0 && (
+          <section className="section">
+            <div className="section-heading">
+              <div>
+                <span className="section-label">SEARCH RESULTS</span>
+                <h2>Results for “{query}”</h2>
+              </div>
+              <span>{songs.length} songs</span>
+            </div>
+
+            <div className="song-list">
+              {songs.map((song, index) => (
+                <div
+                  className={`song-row ${
+                    currentSong?.id === song.id ? "selected" : ""
+                  }`}
+                  key={song.id}
+                >
+                  <span className="song-number">{index + 1}</span>
+
+                  <div
+                    className="song-cover"
+                    onClick={() => playSong(song)}
+                  >
+                    {song.thumbnail && (
+                      <img src={song.thumbnail} alt="" />
+                    )}
+
+                    <div className="cover-play">
+                      {currentSong?.id === song.id && playing
+                        ? "Ⅱ"
+                        : "▶"}
+                    </div>
+                  </div>
+
+                  <div
+                    className="song-info"
+                    onClick={() => playSong(song)}
+                  >
+                    <strong>{song.title}</strong>
+                    <span>{song.artist}</span>
+                  </div>
+
+                  <div className="song-album">
+                    {song.album || "Single"}
+                  </div>
+
+                  <div className="song-duration">
+                    {song.duration || "--:--"}
+                  </div>
+
+                  <button
+                      type="button"
+                      className={`queue-add ${
+                        queue.some((item) => item.id === song.id)
+                          ? "queue-added"
+                          : ""
+                      }`}
+                      title={
+                        queue.some((item) => item.id === song.id)
+                          ? "Already in queue"
+                          : "Add to queue"
+                      }
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        if (!queue.some((item) => item.id === song.id)) {
+                          addToQueue(song);
+                        }
+                      }}
+                    >
+                      {queue.some((item) => item.id === song.id) ? "✓" : "＋"}
+                    </button>
+
+                  <button
+                    className={`like ${
+                      liked.includes(song.id) ? "liked" : ""
+                    }`}
+                    onClick={() => toggleLike(song.id)}
+                  >
+                    {liked.includes(song.id) ? "♥" : "♡"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="section">
+          <div className="section-heading">
+            <div>
+              <span className="section-label">DISCOVER</span>
+              <h2>Popular right now</h2>
+            </div>
+            <span>Explore all →</span>
+          </div>
+
+          <div className="music-grid">
+            {featured.map((item) => (
+              <div className="music-card" key={item.title}>
+                <div className="card-image">
+                  <img src={item.image} alt="" />
+                  <button
+                    onClick={() =>
+                      setQuery(item.title)
+                    }
+                    className="card-play"
+                  >
+                    ▶
+                  </button>
+                </div>
+
+                <strong>{item.title}</strong>
+                <span>{item.artist}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="section-heading">
+            <div>
+              <span className="section-label">MADE FOR YOU</span>
+              <h2>Pick your atmosphere</h2>
+            </div>
+          </div>
+
+          <div className="mood-grid">
+            <div className="mood-card night">
+              <span>☾</span>
+              <div>
+                <b>Night Drive</b>
+                <small>Late night energy</small>
+              </div>
+            </div>
+
+            <div className="mood-card energy">
+              <span>ϟ</span>
+              <div>
+                <b>Energy</b>
+                <small>Turn it up</small>
+              </div>
+            </div>
+
+            <div className="mood-card chill">
+              <span>☁</span>
+              <div>
+                <b>Chill</b>
+                <small>Slow everything down</small>
+              </div>
+            </div>
+
+            <div className="mood-card trending">
+              <span>↗</span>
+              <div>
+                <b>Trending</b>
+                <small>What's hot right now</small>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      {showLyrics && currentSong && (
+        <div
+          className="lyrics-panel"
+          style={
+            lyricsPosition.x !== 0 || lyricsPosition.y !== 0
+              ? {
+                  left: `${lyricsPosition.x}px`,
+                  top: `${lyricsPosition.y}px`,
+                  right: "auto",
+                  bottom: "auto",
+                }
+              : undefined
+          }
+        >
+          {[
+            ["n", "ns-resize"],
+            ["s", "ns-resize"],
+            ["e", "ew-resize"],
+            ["w", "ew-resize"],
+            ["ne", "nesw-resize"],
+            ["sw", "nesw-resize"],
+            ["nw", "nwse-resize"],
+            ["se", "nwse-resize"],
+          ].map(([direction, cursor]) => (
+            <div
+              key={direction}
+              className={`panel-resize-handle resize-${direction}`}
+              style={{ cursor }}
+              onPointerDown={(e) =>
+                startPanelResize(
+                  e,
+                  "lyrics",
+                  direction
+                )
+              }
+            />
+          ))}
+
+          <div
+            className="lyrics-header"
+            onPointerDown={startLyricsDrag}
+            onPointerMove={moveLyricsDrag}
+            onPointerUp={stopLyricsDrag}
+            onPointerCancel={stopLyricsDrag}
+            style={{
+              cursor: draggingLyrics ? "grabbing" : "grab",
+              touchAction: "none",
+            }}
+          >
+            <div>
+              <span className="lyrics-label">
+                NOW PLAYING
+              </span>
+
+              <h3>Lyrics</h3>
+
+              <p>
+                {currentSong.title}
+              </p>
+            </div>
+
+            <button
+              className="lyrics-close"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setShowLyrics(false)}
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="lyrics-body">
+            {lyricsLoading ? (
+              <div className="lyrics-loading">
+                <span className="lyrics-spinner" />
+                Finding lyrics...
+              </div>
+            ) : lyricsError ? (
+              <div className="lyrics-empty">
+                Unable to load lyrics.
+              </div>
+            ) : lyrics.length ? (
+                (syncedLyrics.length ? syncedLyrics : lyrics.map((text) => ({
+                  time: 0,
+                  text,
+                }))).map((line, index) => (
+                  <div
+                      ref={(element) => {
+                        lyricRefs.current[index] = element;
+                      }}
+                    key={`${line.text}-${index}`}
+                    className={`lyrics-line ${
+                      index === activeLyric ? "lyrics-active" : ""
+                    }`}
+                  >
+                    {line.text}
+                  </div>
+                ))
+            ) : (
+              <div className="lyrics-empty">
+                No lyrics available.
+              </div>
+            )}
+          </div>
+
+          <div className="lyrics-footer">
+            <button
+              className={`lyrics-like ${
+                liked.includes(currentSong.id)
+                  ? "liked"
+                  : ""
+              }`}
+              onClick={() =>
+                toggleLike(currentSong.id)
+              }
+            >
+              {liked.includes(currentSong.id)
+                ? "♥ Liked"
+                : "♡ Like"}
+            </button>
+
+            <span>✦ Auralis</span>
+          </div>
+        </div>
+      )}
+
+      {showQueue && currentSong && (
+        <div className="queue-panel">
+          {[
+            ["n", "ns-resize"],
+            ["s", "ns-resize"],
+            ["e", "ew-resize"],
+            ["w", "ew-resize"],
+            ["ne", "nesw-resize"],
+            ["sw", "nesw-resize"],
+            ["nw", "nwse-resize"],
+            ["se", "nwse-resize"],
+          ].map(([direction, cursor]) => (
+            <div
+              key={direction}
+              className={`panel-resize-handle resize-${direction}`}
+              style={{ cursor }}
+              onPointerDown={(e) =>
+                startPanelResize(
+                  e,
+                  "queue",
+                  direction
+                )
+              }
+            />
+          ))}
+
+          <div className="queue-header">
+            <div>
+              <span className="queue-label">PLAYING NEXT</span>
+              <h3>Queue</h3>
+            </div>
+
+            <button
+              className="queue-close"
+              onClick={() => setShowQueue(false)}
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="queue-list">
+            {queue.length > 0 ? (
+              queue.map((song, index) => (
+                <div
+                  key={song.id}
+                  className={`queue-item ${
+                    draggedQueueIndex === index ? "dragging" : ""
+                  }`}
+                  draggable
+                  onDragStart={() => setDraggedQueueIndex(index)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+
+                    if (draggedQueueIndex !== null) {
+                      moveQueueItem(draggedQueueIndex, index);
+                    }
+
+                    setDraggedQueueIndex(null);
+                  }}
+                  onDragEnd={() => setDraggedQueueIndex(null)}
+                >
+                  <span className="queue-drag">⠿</span>
+
+                  <span className="queue-number">
+                    {index + 1}
+                  </span>
+
+                  <div className="queue-cover">
+                    {song.thumbnail && (
+                      <img src={song.thumbnail} alt="" />
+                    )}
+                  </div>
+
+                  <button
+                    className="queue-info"
+                    onClick={() => {
+                      playSong(song);
+                      setShowQueue(false);
+                    }}
+                  >
+                    <strong>{song.title}</strong>
+                    <span>{song.artist}</span>
+                  </button>
+
+                  <span className="queue-duration">
+                    {song.duration || "--:--"}
+                  </span>
+
+                  <button
+                    className="queue-remove"
+                    onClick={() => removeFromQueue(song.id)}
+                    aria-label="Remove from queue"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="queue-empty">
+                <div className="queue-empty-icon">☷</div>
+                <strong>Your queue is empty</strong>
+                <span>Add songs to build your queue.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {currentSong && (
+        <>
+          <YouTube
+            videoId={currentSong.id}
+            opts={{
+              height: "0",
+              width: "0",
+              playerVars: {
+                autoplay: 1,
+                controls: 0,
+                playsinline: 1,
+              },
+            }}
+            onReady={(event) => {
+              playerRef.current = event.target;
+
+              event.target.setVolume(volume * 100);
+              setDuration(event.target.getDuration());
+
+              if (playing) {
+                event.target.playVideo();
+              }
+            }}
+            onStateChange={(event) => {
+              if (event.data === 1) {
+                setPlaying(true);
+              }
+
+              if (event.data === 2) {
+                setPlaying(false);
+              }
+
+              if (event.data === 0) {
+                nextSong();
+              }
+            }}
+            onError={(event) => {
+              console.error("YouTube player error:", event.data);
+              setPlaying(false);
+            }}
+          />
+
+        <div className="player">
+          <div className="player-song">
+            <div className={`player-cover ${playing ? "playing" : ""}`}>
+              {currentSong.thumbnail && (
+                <img src={currentSong.thumbnail} alt="" />
+              )}
+            </div>
+
+            <div className="player-song-info">
+              <strong>{currentSong.title}</strong>
+              <span>{currentSong.artist}</span>
+            </div>
+          </div>
+
+          <div className="player-center">
+            <div className="player-buttons">
+              <button onClick={previousSong}>↶</button>
+
+              <button
+                className="play-button"
+                onClick={() => setPlaying(!playing)}
+              >
+                {playing ? "⏸" : "▶"}
+              </button>
+
+              <button onClick={nextSong}>↷</button>
+            </div>
+
+            <div className="progress">
+              <span>
+                {Math.floor(progress / 60)}:
+                {String(Math.floor(progress % 60)).padStart(2, "0")}
+              </span>
+
+              <div className="progress-bar">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${duration > 0 ? Math.min(100, (progress / duration) * 100) : 0}%`,
+                  }}
+                />
+
+                <input
+                  type="range"
+                  min="0"
+                  max={duration || 100}
+                  step="0.1"
+                  value={progress}
+                  onPointerDown={() => {
+                    setSeeking(true);
+                  }}
+                  onPointerUp={() => {
+                    const player = playerRef.current;
+
+                    if (player) {
+                      const time = player.getCurrentTime();
+
+                      if (Number.isFinite(time)) {
+                        lastSyncTimeRef.current = time;
+                        lastSyncAtRef.current = performance.now();
+                        visualProgressRef.current = time;
+                        setProgress(time);
+                      }
+                    }
+
+                    setSeeking(false);
+                  }}
+                  onPointerCancel={() => setSeeking(false)}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    const player = playerRef.current;
+
+                    if (!player || !duration) return;
+
+                    setProgress(value);
+
+                    if (value >= duration - 0.5) {
+                      player.seekTo(duration, true);
+
+                      setTimeout(() => {
+                        nextSong();
+                      }, 200);
+
+                      return;
+                    }
+
+                    player.seekTo(value, true);
+
+                    lastSyncTimeRef.current = value;
+                    lastSyncAtRef.current = performance.now();
+                    visualProgressRef.current = value;
+                  }}
+                />
+              </div>
+
+              <span>
+                {Math.floor(duration / 60)}:
+                {String(Math.floor(duration % 60)).padStart(2, "0")}
+              </span>
+            </div>
+          </div>
+
+          <div className="player-actions">
+            <button
+              className={`lyrics-button ${showLyrics ? "active" : ""}`}
+              onClick={() => setShowLyrics((value) => !value)}
+            >
+              ♪ Lyrics
+            </button>
+
+            <button
+              className={`lyrics-button ${showQueue ? "active" : ""}`}
+              onClick={() => setShowQueue((value) => !value)}
+            >
+              ☷ Queue
+            </button>
+          </div>
+
+
+              
+
+          <div className="player-volume">
+            <span>🔊</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setVolume(value);
+
+                const player = playerRef.current;
+                if (player) {
+                  player.setVolume(value * 100);
+                }
+              }}
+            />
+
+          
+
+              
+
+
+              <div
+                className={`sound-visualizer ${
+                  playing ? "playing" : ""
+                }`}
+                aria-hidden="true"
+              >
+                <span />
+                <span />
+                <span />
+                <span />
+              
+                  <span />                  <span />                  <span />                  <span />                  <span />                  <span />                  <span />                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+
+                  <span />
+                  <span />
+                  <span />
+                  
+                  
+                  
+                  
+                  
+</div>
+</div>
+
+
+        </div>
+        </>
+      )}
+    </main>
+  );
+}

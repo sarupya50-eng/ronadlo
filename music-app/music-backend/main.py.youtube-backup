@@ -1,0 +1,139 @@
+from pathlib import Path
+import subprocess
+
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import RedirectResponse, StreamingResponse
+from ytmusicapi import YTMusic
+
+app = FastAPI()
+ytmusic = YTMusic()
+
+BASE_DIR = Path(__file__).parent
+COOKIES = BASE_DIR / "cookies.txt"
+
+
+@app.get("/search")
+async def search(q: str = Query(...)):
+    if not q.strip():
+        return {"results": []}
+
+    try:
+        results = ytmusic.search(q, filter="songs")
+        songs = []
+
+        for item in results[:20]:
+            video_id = item.get("videoId")
+            if not video_id:
+                continue
+
+            artists = item.get("artists", [])
+            artist = ", ".join(
+                a.get("name", "") for a in artists
+            )
+
+            album = item.get("album")
+            album_name = album.get("name") if album else None
+
+            thumbnails = item.get("thumbnails", [])
+            thumbnail = (
+                thumbnails[-1].get("url")
+                if thumbnails
+                else None
+            )
+
+            songs.append({
+                "id": video_id,
+                "title": item.get("title", "Unknown"),
+                "artist": artist or "Unknown Artist",
+                "album": album_name,
+                "thumbnail": thumbnail,
+                "duration": item.get("duration"),
+            })
+
+        return {"results": songs}
+
+    except Exception as e:
+        print("Search error:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Music search failed"
+        )
+
+
+@app.get("/play")
+async def play(id: str):
+    if not id:
+        raise HTTPException(status_code=400, detail="Missing video ID")
+
+    if not COOKIES.exists():
+        raise HTTPException(status_code=500, detail="cookies.txt not found")
+
+    try:
+        url = f"https://www.youtube.com/watch?v={id}"
+
+        result = subprocess.run(
+            [
+                "yt-dlp",
+                "--cookies", str(COOKIES),
+                "--remote-components", "ejs:github",
+                "-f", "bestaudio",
+                "-g",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            print("yt-dlp stderr:", result.stderr)
+            raise HTTPException(
+                status_code=502,
+                detail="Could not get audio stream"
+            )
+
+        stream_url = result.stdout.strip().splitlines()[0]
+
+        if not stream_url:
+            raise HTTPException(
+                status_code=404,
+                detail="No audio stream found"
+            )
+
+        import httpx
+
+        async def audio_stream():
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=None
+            ) as client:
+                async with client.stream("GET", stream_url) as response:
+                    response.raise_for_status()
+
+                    async for chunk in response.aiter_bytes(64 * 1024):
+                        yield chunk
+
+        return StreamingResponse(
+            audio_stream(),
+            media_type="audio/webm",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=504,
+            detail="YouTube request timed out"
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("Playback error:", repr(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Playback failed"
+        )

@@ -1,0 +1,1 @@
+import "./globals.css"; export const metadata={title:"Auralis — Music",description:"Ad-free music discovery powered by Jamendo"}; export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="en"><body>{children}</body></html>}

@@ -31,4 +31,22 @@ export const api = {
   createRoom: (payload, token) => request("/rooms", { method: "POST", body: payload, token }),
   getRoom: (id) => request(`/rooms/${id}`),
   joinRoom: (id, token) => request(`/rooms/${id}/join`, { method: "POST", token }),
+  listTracks: () => request("/tracks"),
+  getQueue: (roomId) => request(`/tracks/queue/${roomId}`),
+  addToQueue: (trackId, roomId, token) =>
+    request(`/tracks/${trackId}/queue/${roomId}`, { method: "POST", token }),
+  uploadTrack: async (uri, filename, mimeType, title, token) => {
+    const formData = new FormData();
+    formData.append("file", { uri, name: filename, type: mimeType });
+    formData.append("title", title || filename);
+
+    const res = await fetch(`${API_BASE_URL}/tracks`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Upload failed");
+    return data;
+  },
 };
