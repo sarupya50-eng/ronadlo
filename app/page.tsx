@@ -903,7 +903,8 @@ export default function Home() {
 
   return (
 
-    <main>
+    <main className="app-shell">
+      <div className="main-content">
 
       {optionsSong && (
         <div
@@ -2294,6 +2295,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      </div>
 
       {currentSong && (
         <>
