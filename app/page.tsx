@@ -1,8 +1,9 @@
 "use client";
-import { Heart, Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Music2, ListMusic, Volume2, Home as HomeIcon, Search, Library, Clock3, Sparkles, Disc3, MoreHorizontal, Headphones, ChevronRight } from "lucide-react";
+import { Heart, Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Music2, ListMusic, Volume2, Home as HomeIcon, Search, Library, Clock3, Sparkles, Disc3, MoreHorizontal, Headphones, ChevronRight, ChevronLeft } from "lucide-react";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import YouTube, { YouTubePlayer } from "react-youtube";
+import "./home.css";
 
 type Song = {
   id: string;
@@ -147,15 +148,72 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok) {
-        setAtmosphereSongs((data.results || []).slice(0, 8));
-      } else {
-        setAtmosphereSongs({});
+        const results: Song[] = (data.results || []).slice(0, 8);
+
+        setAtmosphereSongs((old) => ({ ...old, [name]: results }));
       }
     } catch {
-      setAtmosphereSongs({});
+      console.error("Atmosphere search failed");
     } finally {
       setAtmosphereLoading(false);
     }
+  }
+
+  /* ---------- HOME helpers ---------- */
+
+  const [greeting, setGreeting] = useState("Welcome back");
+  const [loadingCard, setLoadingCard] = useState<string | null>(null);
+  const popularRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+
+    setGreeting(
+      hour < 5
+        ? "Late night listening"
+        : hour < 12
+        ? "Good morning"
+        : hour < 17
+        ? "Good afternoon"
+        : hour < 21
+        ? "Good evening"
+        : "Late night listening"
+    );
+
+    // Fill the atmosphere section on first load so Home never looks empty
+    selectAtmosphere("Night Drive", "night drive");
+  }, []);
+
+  async function playFeatured(item: { title: string; artist: string }) {
+    if (loadingCard) return;
+
+    setLoadingCard(item.title);
+    setQuery(item.title);
+
+    try {
+      const response = await fetch(
+        `/api/search?q=${encodeURIComponent(`${item.title} ${item.artist}`)}`
+      );
+
+      const data = await response.json();
+      const results: Song[] = data.results || [];
+
+      if (results.length > 0) {
+        setSongs(results);
+        playSong(results[0]);
+      }
+    } catch (error) {
+      console.error("Failed to play song:", error);
+    } finally {
+      setLoadingCard(null);
+    }
+  }
+
+  function scrollPopular(direction: 1 | -1) {
+    popularRef.current?.scrollBy({
+      left: direction * 640,
+      behavior: "smooth",
+    });
   }
 
   const [playlists, setPlaylists] = useState<
@@ -1254,17 +1312,67 @@ export default function Home() {
         </header>
 
         {activeView === "home" && (
-          <section className="hero">
-            <div className="hero-glow" />
+          <section className="hx-hero">
+            <div className="hx-hero-glow" />
 
-            <div className="hero-text">
-              <div className="hero-label">✦ AURALIS MUSIC</div>
-              <h2>Your music.<br />Your atmosphere.</h2>
+            <div className="hx-hero-copy">
+              <span className="hx-eyebrow">✦ {greeting}</span>
+
+              <h2>
+                Your music.
+                <br />
+                <em>Your atmosphere.</em>
+              </h2>
+
+              <p>
+                {currentSong
+                  ? `Now ${playing ? "playing" : "paused"}: ${currentSong.title} — ${currentSong.artist}`
+                  : "Pick a vibe, search a song, or jump into what's popular right now."}
+              </p>
+
+              <div className="hx-hero-actions">
+                <button
+                  type="button"
+                  className="hx-btn hx-btn-primary"
+                  onClick={() => {
+                    if (currentSong) {
+                      setPlaying((value) => !value);
+                    } else {
+                      playFeatured(featured[0]);
+                    }
+                  }}
+                >
+                  {currentSong && playing ? (
+                    <Pause size={18} fill="currentColor" />
+                  ) : (
+                    <Play size={18} fill="currentColor" />
+                  )}
+                  {currentSong
+                    ? playing
+                      ? "Pause"
+                      : "Resume"
+                    : "Play something"}
+                </button>
+
+                <button
+                  type="button"
+                  className="hx-btn hx-btn-ghost"
+                  onClick={() => setActiveView("search")}
+                >
+                  <Search size={17} />
+                  Search songs
+                </button>
+              </div>
             </div>
 
-            <div className="hero-art">
-              <div className="disc">
-                <div className="disc-center">A</div>
+            <div className="hx-hero-art">
+              <div className={`hx-disc ${playing ? "spin" : ""}`}>
+                {currentSong?.thumbnail ? (
+                  <img src={currentSong.thumbnail} alt="" />
+                ) : (
+                  <span>A</span>
+                )}
+                <i className="hx-disc-hole" />
               </div>
             </div>
           </section>
@@ -1692,48 +1800,115 @@ export default function Home() {
 
         {activeView === "home" && (
           <>
-            <section className="section">
+            {recentlyPlayed.length > 0 && (
+              <section className="section hx-section">
+                <div className="section-heading">
+                  <div>
+                    <span className="section-label">JUMP BACK IN</span>
+                    <h2>Recently played</h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="hx-link"
+                    onClick={() => setActiveView("recent")}
+                  >
+                    See all →
+                  </button>
+                </div>
+
+                <div className="hx-quick-grid">
+                  {recentlyPlayed.slice(0, 6).map((song) => (
+                    <button
+                      type="button"
+                      key={song.id}
+                      className={`hx-quick ${
+                        currentSong?.id === song.id ? "active" : ""
+                      }`}
+                      onClick={() => playSong(song)}
+                    >
+                      <span className="hx-quick-art">
+                        {song.thumbnail ? (
+                          <img src={song.thumbnail} alt="" />
+                        ) : (
+                          <span>♫</span>
+                        )}
+                      </span>
+
+                      <span className="hx-quick-text">
+                        <b>{song.title}</b>
+                        <small>{song.artist}</small>
+                      </span>
+
+                      <span className="hx-quick-play">
+                        {currentSong?.id === song.id && playing ? (
+                          <Pause size={16} fill="currentColor" />
+                        ) : (
+                          <Play size={16} fill="currentColor" />
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="section hx-section">
           <div className="section-heading">
             <div>
               <span className="section-label">DISCOVER</span>
               <h2>Popular right now</h2>
             </div>
-            <span>Explore all →</span>
+
+            <div className="hx-arrows">
+              <button
+                type="button"
+                aria-label="Scroll left"
+                onClick={() => scrollPopular(-1)}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                aria-label="Scroll right"
+                onClick={() => scrollPopular(1)}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
 
-          <div className="music-grid">
-            {featured.map((item) => (
-              <div className="music-card" key={item.title}>
-                <div className="card-image">
-                  <img src={item.image} alt="" />
-                  <button
-                    onClick={async () => {
-                      setQuery(item.title);
-
-                      try {
-                        const response = await fetch(
-                          `/api/search?q=${encodeURIComponent(
-                            `${item.title} ${item.artist}`
-                          )}`
-                        );
-
-                        const data = await response.json();
-                        const results = data.results || [];
-
-                        setSongs(results);
-
-                        if (results.length > 0) {
-                          playSong(results[0]);
-                        }
-                      } catch (error) {
-                        console.error("Failed to play song:", error);
-                      }
+          <div className="hx-carousel" ref={popularRef}>
+            {featured.map((item, index) => (
+              <div className="hx-card" key={item.title}>
+                <button
+                  type="button"
+                  className={`hx-card-art ${
+                    loadingCard === item.title ? "loading" : ""
+                  }`}
+                  aria-label={`Play ${item.title} by ${item.artist}`}
+                  onClick={() => playFeatured(item)}
+                >
+                  <img
+                    src={item.image}
+                    alt=""
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
                     }}
-                    className="card-play"
-                  >
-                    ▶
-                  </button>
-                </div>
+                  />
+
+                  <span className="hx-rank">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+
+                  <span className="hx-card-play">
+                    {loadingCard === item.title ? (
+                      <span className="hx-spinner" />
+                    ) : (
+                      <Play size={22} fill="currentColor" />
+                    )}
+                  </span>
+                </button>
 
                 <strong>{item.title}</strong>
                 <span>{item.artist}</span>
