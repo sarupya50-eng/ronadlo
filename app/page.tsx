@@ -244,9 +244,10 @@ export default function Home() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsError, setLyricsError] = useState(false);
+  // Opens over the main content (not the sidebar) so navigation stays usable
   const [lyricsPosition, setLyricsPosition] = useState({
-    x: 30,
-    y: 120,
+    x: 320,
+    y: 96,
   });
   const [draggingLyrics, setDraggingLyrics] = useState(false);
   const [resizingPanel, setResizingPanel] = useState<string | null>(null);
@@ -259,6 +260,8 @@ export default function Home() {
     startHeight: 0,
     startLeft: 0,
     startTop: 0,
+    startRight: 0,
+    startBottom: 0,
     direction: "",
   });
 
@@ -283,6 +286,8 @@ export default function Home() {
       startHeight: rect.height,
       startLeft: rect.left,
       startTop: rect.top,
+      startRight: window.innerWidth - rect.right,
+      startBottom: window.innerHeight - rect.bottom,
       direction,
     };
 
@@ -330,10 +335,11 @@ export default function Home() {
         target.style.height = `${height}px`;
 
         if (r.panel === "queue") {
-          target.style.right = "650px";
+          // Queue stays pinned to the corner it started in
+          target.style.right = `${r.startRight}px`;
           target.style.left = "auto";
           target.style.top = "auto";
-          target.style.bottom = "105px";
+          target.style.bottom = `${r.startBottom}px`;
         } else {
           target.style.right = "auto";
           target.style.bottom = "auto";
@@ -1470,15 +1476,35 @@ export default function Home() {
 
       <section className="content">
         <header className="topbar">
-          <div>
-            <div className="eyebrow">AURALIS MUSIC ENGINE</div>
-            <h1>Premium sound.</h1>
-            <p className="subtitle">
-              Discover music without limits.
-            </p>
+          <div className="topbar-nav">
+            <button
+              type="button"
+              className="topbar-round"
+              aria-label="Home"
+              onClick={() => setActiveView("home")}
+            >
+              <HomeIcon size={20} />
+            </button>
+
+            <form
+              className="topbar-search"
+              onSubmit={(e) => {
+                setActiveView("search");
+                search(e);
+              }}
+            >
+              <Search size={18} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => setActiveView("search")}
+                placeholder="What do you want to play?"
+                aria-label="Search songs"
+              />
+            </form>
           </div>
 
-
+          <div className="topbar-badge" title="Auralis">A</div>
         </header>
 
         {activeView === "home" && (
@@ -1623,10 +1649,6 @@ export default function Home() {
                   >
                     <strong>{song.title}</strong>
                     <span>{song.artist}</span>
-                  </div>
-
-                  <div className="song-album">
-                    {song.album || "Single"}
                   </div>
 
                   <div className="song-duration">
@@ -1984,22 +2006,53 @@ export default function Home() {
               </div>
             )}
 
-            {likedSongs.length > 0 && (
-              <div className="playlist-section">
-                <span className="section-label">QUICK ACCESS</span>
+            <div className="playlist-section">
+              <span className="section-label">QUICK ACCESS</span>
 
-                <div className="playlist-grid">
-                  <button
-                    className="playlist-card"
-                    onClick={() => setActiveView("liked")}
-                  >
-                    <div className="playlist-icon">♥</div>
-                    <strong>Liked Songs</strong>
-                    <span>{likedSongs.length} songs</span>
-                  </button>
-                </div>
+              <div className="playlist-grid">
+                <button
+                  className="playlist-card"
+                  onClick={() => setActiveView("liked")}
+                >
+                  <div className="playlist-icon">♥</div>
+                  <strong>Liked Songs</strong>
+                  <span>{likedSongs.length} songs</span>
+                </button>
+
+                <button
+                  className="playlist-card"
+                  onClick={() => setActiveView("recent")}
+                >
+                  <div className="playlist-icon">
+                    <Clock3 size={26} />
+                  </div>
+                  <strong>Recently Played</strong>
+                  <span>{recentlyPlayed.length} songs</span>
+                </button>
+
+                <button
+                  className="playlist-card"
+                  onClick={() => setActiveView("made")}
+                >
+                  <div className="playlist-icon">
+                    <Sparkles size={26} />
+                  </div>
+                  <strong>Made For You</strong>
+                  <span>Mood mixes</span>
+                </button>
+
+                <button
+                  className="playlist-card"
+                  onClick={() => setActiveView("albums")}
+                >
+                  <div className="playlist-icon">
+                    <Disc3 size={26} />
+                  </div>
+                  <strong>Artists</strong>
+                  <span>From your listening</span>
+                </button>
               </div>
-            )}
+            </div>
           </section>
         )}
 

@@ -1,16 +1,16 @@
 /* =========================================================
    AURALIS — HOME (hx-*)
    Scoped styles for the redesigned Home view.
-   Monochrome to match globals.css; tweak --hx-accent to recolor.
+   Spotify-style green; tweak --hx-accent to recolor.
 ========================================================= */
 
 :root {
-  --hx-accent: #ffffff;
-  --hx-accent-2: #a1a1aa;
-  --hx-glass: rgba(255, 255, 255, 0.055);
-  --hx-glass-border: rgba(255, 255, 255, 0.11);
-  --hx-text: #f5f5f5;
-  --hx-muted: #8b8b93;
+  --hx-accent: #1ed760;
+  --hx-accent-2: #14a44d;
+  --hx-glass: #181818;
+  --hx-glass-border: transparent;
+  --hx-text: #ffffff;
+  --hx-muted: #b3b3b3;
 }
 
 /* ---------- HERO ---------- */
@@ -23,15 +23,11 @@
   gap: 32px;
   padding: 44px 48px;
   margin-bottom: 36px;
-  border-radius: 28px;
+  border-radius: 12px;
   overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02) 60%),
-    #111113;
-  border: 1px solid var(--hx-glass-border);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(135deg, #1b6b3a 0%, #0f3d22 55%, #181818 100%);
+  border: 0;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 
 .hx-hero-glow {
@@ -42,7 +38,7 @@
   height: 420px;
   border-radius: 50%;
   background: radial-gradient(circle, var(--hx-accent) 0%, transparent 65%);
-  opacity: 0.10;
+  opacity: 0.22;
   filter: blur(30px);
   pointer-events: none;
 }
@@ -59,28 +55,26 @@
   margin-bottom: 18px;
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--hx-text);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--hx-glass-border);
+  background: rgba(0, 0, 0, 0.35);
+  border: 0;
   border-radius: 999px;
 }
 
 .hx-hero-copy h2 {
   margin: 0 0 14px;
   font-size: clamp(34px, 5vw, 56px);
+  font-weight: 900;
   line-height: 1.05;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   color: var(--hx-text);
 }
 
 .hx-hero-copy h2 em {
   font-style: normal;
-  background: linear-gradient(90deg, var(--hx-accent), var(--hx-accent-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--hx-accent);
 }
 
 .hx-hero-copy p {
@@ -118,24 +112,25 @@
 }
 
 .hx-btn-primary {
-  color: #09090b;
-  background: #fff;
-  box-shadow: 0 10px 28px rgba(255, 255, 255, 0.18);
+  color: #000;
+  background: var(--hx-accent);
+  box-shadow: none;
 }
 
 .hx-btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 34px rgba(255, 255, 255, 0.28);
+  background: #3be477;
+  transform: scale(1.04);
 }
 
 .hx-btn-ghost {
   color: var(--hx-text);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--hx-glass-border);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .hx-btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.14);
+  border-color: #fff;
+  transform: scale(1.04);
 }
 
 /* spinning disc */
@@ -157,9 +152,9 @@
   font-size: 64px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.85);
-  background: conic-gradient(from 0deg, #161618, #3a3a40, #161618, #52525b, #161618);
+  background: repeating-radial-gradient(circle at center, #111 0 3px, #1a1a1a 3px 6px);
   border: 6px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), 0 0 50px rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 60px rgba(30, 215, 96, 0.25);
 }
 
 .hx-disc img {
@@ -179,8 +174,8 @@
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: #0b0b12;
-  border: 3px solid rgba(255, 255, 255, 0.2);
+  background: #121212;
+  border: 3px solid rgba(255, 255, 255, 0.25);
 }
 
 @keyframes hx-spin {
@@ -247,33 +242,32 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 8px 14px 8px 8px;
+  padding: 0 14px 0 0;
+  overflow: hidden;
   text-align: left;
   color: var(--hx-text);
-  background: var(--hx-glass);
-  border: 1px solid var(--hx-glass-border);
-  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  transition: background 0.18s ease;
 }
 
 .hx-quick:hover {
-  background: rgba(255, 255, 255, 0.11);
-  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .hx-quick.active {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(30, 215, 96, 0.16);
 }
 
 .hx-quick-art {
   display: grid;
   place-items: center;
-  flex: 0 0 52px;
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  border-radius: 0;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -315,9 +309,10 @@
   flex: 0 0 34px;
   width: 34px;
   height: 34px;
-  color: #09090b;
-  background: #fff;
+  color: #000;
+  background: var(--hx-accent);
   border-radius: 50%;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
   opacity: 0;
   transform: translateX(6px);
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -346,25 +341,33 @@
 
 .hx-card {
   display: flex;
-  flex: 0 0 176px;
+  flex: 0 0 188px;
   flex-direction: column;
   scroll-snap-align: start;
   min-width: 0;
+  padding: 14px;
+  background: #181818;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.hx-card:hover {
+  background: #282828;
 }
 
 .hx-card-art {
   position: relative;
-  width: 176px;
-  height: 176px;
-  margin-bottom: 12px;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-bottom: 14px;
   padding: 0;
-  border: 1px solid var(--hx-glass-border);
-  border-radius: 18px;
+  border: 0;
+  border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
   background: linear-gradient(135deg, #1d1d20, #2a2a2f);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.22s ease;
 }
 
 .hx-card-art img {
@@ -377,12 +380,7 @@
 }
 
 .hx-card-art:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.55);
-}
-
-.hx-card-art:hover img {
-  transform: scale(1.07);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
 .hx-rank {
@@ -394,7 +392,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #fff;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
   border-radius: 999px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -402,16 +400,16 @@
 
 .hx-card-play {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: 8px;
+  bottom: 8px;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  color: #09090b;
-  background: #fff;
+  width: 48px;
+  height: 48px;
+  color: #000;
+  background: var(--hx-accent);
   border-radius: 50%;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -495,9 +493,9 @@
   font-size: 14px;
   line-height: 1.5;
   color: var(--hx-muted);
-  background: var(--hx-glass);
-  border: 1px dashed var(--hx-glass-border);
-  border-radius: 14px;
+  background: #181818;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
 }
 
 .hx-note-error {
