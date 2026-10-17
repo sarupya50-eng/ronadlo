@@ -486,3 +486,22 @@
     transition: none;
   }
 }
+
+/* ---------- NOTES / EMPTY + ERROR STATES ---------- */
+
+.hx-note {
+  margin: 18px 0;
+  padding: 14px 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hx-muted);
+  background: var(--hx-glass);
+  border: 1px dashed var(--hx-glass-border);
+  border-radius: 14px;
+}
+
+.hx-note-error {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}

@@ -98,7 +98,15 @@ export default function Home() {
   const [repeat, setRepeat] = useState(false);
   const playingRef = useRef(false);
   const seekingRef = useRef(false);
-  const [liked, setLiked] = useState<string[]>([]);
+  const [likedSongs, setLikedSongs] = useState<Song[]>([]);
+  const liked = likedSongs.map((item) => item.id);
+  const [contextList, setContextList] = useState<Song[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [hasSearched, setHasSearched] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const lastEndRef = useRef(0);
+  const nextSongRef = useRef<(auto?: boolean) => void>(() => {});
   const [queue, setQueue] = useState<Song[]>([]);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [showQueue, setShowQueue] = useState(false);
@@ -200,7 +208,7 @@ export default function Home() {
 
       if (results.length > 0) {
         setSongs(results);
-        playSong(results[0]);
+        playSong(results[0], results);
       }
     } catch (error) {
       console.error("Failed to play song:", error);
@@ -375,6 +383,9 @@ export default function Home() {
 
     if (!query.trim()) return;
 
+    setSearching(true);
+    setSearchError("");
+
     try {
       const response = await fetch(
         `/api/search?q=${encodeURIComponent(query)}`
@@ -384,13 +395,28 @@ export default function Home() {
 
       if (response.ok) {
         setSongs(data.results || []);
+      } else {
+        setSongs([]);
+        setSearchError(
+          data?.error || "Search failed. Please try again in a moment."
+        );
       }
     } catch {
       console.error("Search failed");
+      setSearchError("Couldn't reach the server. Check your connection.");
+    } finally {
+      setSearching(false);
+      setHasSearched(true);
     }
   }
 
-  function playSong(song: Song) {
+  function playSong(song: Song, list?: Song[]) {
+    // Remember which list the song was played from so Next / Previous /
+    // Shuffle work no matter where the user started playing
+    if (list && list.length > 0) {
+      setContextList(list);
+    }
+
     if (currentSong?.id === song.id) {
       setPlaying((value) => !value);
       return;
@@ -597,9 +623,11 @@ export default function Home() {
     setShowCreatePlaylist(false);
   }
 
-  function toggleLike(id: string) {
-    setLiked((old) =>
-      old.includes(id) ? old.filter((x) => x !== id) : [...old, id]
+  function toggleLike(song: Song) {
+    setLikedSongs((old) =>
+      old.some((item) => item.id === song.id)
+        ? old.filter((item) => item.id !== song.id)
+        : [song, ...old]
     );
   }
 
@@ -621,38 +649,180 @@ export default function Home() {
     setQueue([]);
   }
 
-  function nextSong() {
+  function restartCurrent() {
+    const player = playerRef.current;
+
+    if (player) {
+      player.seekTo(0, true);
+      player.playVideo();
+    }
+
+    setPlaying(true);
+  }
+
+  function pickNeighbour(direction: 1 | -1): Song | null {
+    const list = contextList.length > 0 ? contextList : songs;
+
+    if (!currentSong || list.length === 0) return null;
+
+    if (shuffle && direction === 1 && list.length > 1) {
+      let candidate = list[Math.floor(Math.random() * list.length)];
+
+      while (candidate.id === currentSong.id) {
+        candidate = list[Math.floor(Math.random() * list.length)];
+      }
+
+      return candidate;
+    }
+
+    const index = list.findIndex((s) => s.id === currentSong.id);
+
+    if (index === -1) return list[0];
+
+    return list[(index + direction + list.length) % list.length];
+  }
+
+  function goToSong(song: Song) {
+    if (currentSong?.id === song.id) {
+      restartCurrent();
+    } else {
+      playSong(song);
+    }
+  }
+
+  // auto = true when the song ended by itself (not a button click)
+  function nextSong(auto = false) {
+    if (auto && repeat) {
+      restartCurrent();
+      return;
+    }
+
     if (queue.length > 0) {
       const [next, ...remaining] = queue;
 
       setQueue(remaining);
-      setCurrentSong(next);
-      setPlaying(true);
+      goToSong(next);
       return;
     }
 
-    if (!currentSong || !songs.length) return;
+    const next = pickNeighbour(1);
 
-    const index = songs.findIndex((s) => s.id === currentSong.id);
-    const next = songs[(index + 1) % songs.length];
-
-    setCurrentSong(next);
-    setPlaying(true);
+    if (next) {
+      goToSong(next);
+    } else if (auto) {
+      setPlaying(false);
+    }
   }
 
   function previousSong() {
-    if (!currentSong || !songs.length) return;
+    const player = playerRef.current;
 
-    const index = songs.findIndex((s) => s.id === currentSong.id);
-    const previous = songs[(index - 1 + songs.length) % songs.length];
+    // Like Spotify: restart the song if it's already past 3 seconds
+    if (player && player.getCurrentTime() > 3) {
+      player.seekTo(0, true);
+      return;
+    }
 
-    setCurrentSong(previous);
-    setPlaying(true);
+    const previous = pickNeighbour(-1);
+
+    if (previous) {
+      goToSong(previous);
+    }
   }
+
+  // Song ended — guarded so the YouTube "ended" event and the background
+  // watchdog can't both fire and skip two songs
+  function handleEnded() {
+    const now = Date.now();
+
+    if (now - lastEndRef.current < 2500) return;
+
+    lastEndRef.current = now;
+    nextSongRef.current(true);
+  }
+
+  // Always point at the latest closure (queue, shuffle, repeat, lists)
+  nextSongRef.current = nextSong;
 
   useEffect(() => {
     playingRef.current = playing;
   }, [playing]);
+
+  /* ---------- PERSISTENCE (localStorage) ---------- */
+
+  useEffect(() => {
+    try {
+      const read = (key: string) => {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      };
+
+      const savedLiked = read("auralis:liked");
+      const savedPlaylists = read("auralis:playlists");
+      const savedRecent = read("auralis:recent");
+      const prefs = read("auralis:prefs");
+
+      if (Array.isArray(savedLiked)) setLikedSongs(savedLiked);
+      if (Array.isArray(savedPlaylists)) setPlaylists(savedPlaylists);
+      if (Array.isArray(savedRecent)) setRecentlyPlayed(savedRecent);
+
+      if (prefs && typeof prefs === "object") {
+        if (typeof prefs.volume === "number") setVolume(prefs.volume);
+        if (typeof prefs.shuffle === "boolean") setShuffle(prefs.shuffle);
+        if (typeof prefs.repeat === "boolean") setRepeat(prefs.repeat);
+      }
+    } catch {
+      // corrupted storage — start fresh
+    }
+
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    try {
+      localStorage.setItem("auralis:liked", JSON.stringify(likedSongs));
+      localStorage.setItem("auralis:playlists", JSON.stringify(playlists));
+      localStorage.setItem("auralis:recent", JSON.stringify(recentlyPlayed));
+      localStorage.setItem(
+        "auralis:prefs",
+        JSON.stringify({ volume, shuffle, repeat })
+      );
+    } catch {
+      // storage full or blocked — ignore
+    }
+  }, [hydrated, likedSongs, playlists, recentlyPlayed, volume, shuffle, repeat]);
+
+  // Keyboard shortcuts: Space = play/pause, Shift+→ / Shift+← = next / previous
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      if (typing) return;
+
+      if (event.code === "Space" && currentSong) {
+        event.preventDefault();
+        setPlaying((value) => !value);
+      }
+
+      if (event.shiftKey && event.code === "ArrowRight") {
+        nextSongRef.current(false);
+      }
+
+      if (event.shiftKey && event.code === "ArrowLeft") {
+        previousSong();
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [currentSong, contextList, songs]);
 
   useEffect(() => {
     seekingRef.current = seeking;
@@ -675,7 +845,7 @@ export default function Home() {
         dur > 0 &&
         time >= dur - 0.4
       ) {
-        nextSong();
+        handleEnded();
       }
     }, 1000);
 
@@ -1014,7 +1184,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => {
-                toggleLike(optionsSong.id);
+                toggleLike(optionsSong);
                 setOptionsSong(null);
               }}
             >
@@ -1225,7 +1395,7 @@ export default function Home() {
                 <Disc3 size={19} strokeWidth={1.8} />
               </span>
 
-              <span>Albums</span>
+              <span>Artists</span>
             </button>
 
           </nav>
@@ -1393,8 +1563,22 @@ export default function Home() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="What do you want to listen to?"
               />
-              <button type="submit">Search</button>
+              <button type="submit" disabled={searching}>
+                {searching ? "Searching…" : "Search"}
+              </button>
             </form>
+
+            {searchError && (
+              <div className="hx-note hx-note-error" role="alert">
+                {searchError}
+              </div>
+            )}
+
+            {!searchError && !searching && hasSearched && songs.length === 0 && (
+              <div className="hx-note">
+                No songs found for “{query}”. Try a different spelling or artist.
+              </div>
+            )}
           </section>
         )}
 
@@ -1420,7 +1604,7 @@ export default function Home() {
 
                   <div
                     className="song-cover"
-                    onClick={() => playSong(song)}
+                    onClick={() => playSong(song, songs)}
                   >
                     {song.thumbnail && (
                       <img src={song.thumbnail} alt="" />
@@ -1435,7 +1619,7 @@ export default function Home() {
 
                   <div
                     className="song-info"
-                    onClick={() => playSong(song)}
+                    onClick={() => playSong(song, songs)}
                   >
                     <strong>{song.title}</strong>
                     <span>{song.artist}</span>
@@ -1479,7 +1663,7 @@ export default function Home() {
                     className={`like ${
                       liked.includes(song.id) ? "liked" : ""
                     }`}
-                    onClick={() => toggleLike(song.id)}
+                    onClick={() => toggleLike(song)}
                   >
                     {liked.includes(song.id) ? "♥" : "♡"}
                   </button>
@@ -1516,8 +1700,7 @@ export default function Home() {
 
             {liked.length > 0 ? (
               <div className="library-list">
-                {songs
-                  .filter((song) => liked.includes(song.id))
+                {likedSongs
                   .map((song, index) => (
                     <div className="library-song" key={song.id}>
                       <span className="library-number">
@@ -1532,7 +1715,7 @@ export default function Home() {
 
                       <button
                         className="library-info"
-                        onClick={() => playSong(song)}
+                        onClick={() => playSong(song, likedSongs)}
                       >
                         <strong>{song.title}</strong>
                         <span>{song.artist}</span>
@@ -1544,7 +1727,7 @@ export default function Home() {
 
                       <button
                         className="library-heart liked"
-                        onClick={() => toggleLike(song.id)}
+                        onClick={() => toggleLike(song)}
                       >
                         ♥
                       </button>
@@ -1585,7 +1768,7 @@ export default function Home() {
 
                     <button
                       className="library-info"
-                      onClick={() => playSong(song)}
+                      onClick={() => playSong(song, recentlyPlayed)}
                     >
                       <strong>{song.title}</strong>
                       <span>{song.artist}</span>
@@ -1729,7 +1912,7 @@ export default function Home() {
 
                           <button
                             className="library-info"
-                            onClick={() => playSong(song)}
+                            onClick={() => playSong(song, playlist.songs)}
                           >
                             <strong>{song.title}</strong>
                             <span>{song.artist}</span>
@@ -1794,13 +1977,104 @@ export default function Home() {
               </div>
             )}
 
+            {playlists.length === 0 && (
+              <div className="hx-note">
+                No playlists yet. Create one, then add songs from the ⋮ menu on
+                any song.
+              </div>
+            )}
 
+            {likedSongs.length > 0 && (
+              <div className="playlist-section">
+                <span className="section-label">QUICK ACCESS</span>
+
+                <div className="playlist-grid">
+                  <button
+                    className="playlist-card"
+                    onClick={() => setActiveView("liked")}
+                  >
+                    <div className="playlist-icon">♥</div>
+                    <strong>Liked Songs</strong>
+                    <span>{likedSongs.length} songs</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         )}
 
-        {activeView === "home" && (
+        {activeView === "albums" &&
+          (() => {
+            const pool = [
+              ...likedSongs,
+              ...recentlyPlayed,
+              ...playlists.flatMap((playlist) => playlist.songs),
+            ];
+
+            const byArtist = new Map<string, Song[]>();
+
+            for (const item of pool) {
+              const list = byArtist.get(item.artist) || [];
+
+              if (!list.some((existing) => existing.id === item.id)) {
+                list.push(item);
+              }
+
+              byArtist.set(item.artist, list);
+            }
+
+            const artists = Array.from(byArtist.entries()).sort(
+              (a, b) => b[1].length - a[1].length
+            );
+
+            return (
+              <section className="library-page">
+                <div className="library-heading">
+                  <span className="section-label">YOUR MUSIC</span>
+                  <h1>Artists</h1>
+                  <p>Everyone you've listened to, in one place.</p>
+                </div>
+
+                {artists.length > 0 ? (
+                  <div className="playlist-grid">
+                    {artists.map(([artist, tracks]) => (
+                      <button
+                        className="playlist-card"
+                        key={artist}
+                        onClick={() => playSong(tracks[0], tracks)}
+                      >
+                        <div className="playlist-icon">
+                          {artist.charAt(0).toUpperCase()}
+                        </div>
+                        <strong>{artist}</strong>
+                        <span>
+                          {tracks.length} song{tracks.length === 1 ? "" : "s"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="library-empty">
+                    <div>♫</div>
+                    <h2>No artists yet</h2>
+                    <p>Play or like some songs and your artists will show up here.</p>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
+
+        {(activeView === "home" || activeView === "made") && (
           <>
-            {recentlyPlayed.length > 0 && (
+            {activeView === "made" && (
+              <div className="library-heading">
+                <span className="section-label">YOUR MUSIC</span>
+                <h1>Made For You</h1>
+                <p>Pick a vibe and Auralis finds the songs.</p>
+              </div>
+            )}
+
+            {activeView === "home" && recentlyPlayed.length > 0 && (
               <section className="section hx-section">
                 <div className="section-heading">
                   <div>
@@ -1824,7 +2098,7 @@ export default function Home() {
                       className={`hx-quick ${
                         currentSong?.id === song.id ? "active" : ""
                       }`}
-                      onClick={() => playSong(song)}
+                      onClick={() => playSong(song, recentlyPlayed)}
                     >
                       <span className="hx-quick-art">
                         {song.thumbnail ? (
@@ -1852,6 +2126,7 @@ export default function Home() {
               </section>
             )}
 
+            {activeView === "home" && (
             <section className="section hx-section">
           <div className="section-heading">
             <div>
@@ -1916,6 +2191,7 @@ export default function Home() {
             ))}
           </div>
         </section>
+            )}
 
         <section className="section">
           <div className="section-heading">
@@ -1964,7 +2240,7 @@ export default function Home() {
                   }`}
                   onClick={() => {
                     if (tracks.length) {
-                      playSong(tracks[0]);
+                      playSong(tracks[0], tracks);
                     } else {
                       selectAtmosphere(
                         mood.name,
@@ -2027,7 +2303,7 @@ export default function Home() {
                       currentSong?.id === song.id ? "playing" : ""
                     }`}
                     key={song.id}
-                    onClick={() => playSong(song)}
+                    onClick={() => playSong(song, atmosphereSongs[selectedAtmosphere] || [])}
                   >
                     <div className="atmosphere-song-cover">
                       {song.thumbnail ? (
@@ -2347,7 +2623,7 @@ export default function Home() {
                   : ""
               }`}
               onClick={() =>
-                toggleLike(currentSong.id)
+                toggleLike(currentSong)
               }
             >
               {liked.includes(currentSong.id)
@@ -2503,7 +2779,7 @@ export default function Home() {
               }
 
               if (event.data === 0) {
-                nextSong();
+                handleEnded();
               }
             }}
             onError={(event) => {
@@ -2515,7 +2791,7 @@ export default function Home() {
                 setPlaying(false);
 
                 setTimeout(() => {
-                  nextSong();
+                  nextSongRef.current(false);
                 }, 150);
 
                 return;
@@ -2541,7 +2817,7 @@ export default function Home() {
 
             <button
               className={`player-like ${liked.includes(currentSong.id) ? "active" : ""}`}
-              onClick={() => toggleLike(currentSong.id)}
+              onClick={() => toggleLike(currentSong)}
               aria-label="Like"
             >
               <Heart size={18} fill={liked.includes(currentSong.id) ? "currentColor" : "none"} />
@@ -2570,7 +2846,7 @@ export default function Home() {
                 {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
               </button>
 
-              <button onClick={nextSong} aria-label="Next">
+              <button onClick={() => nextSong(false)} aria-label="Next">
                 <SkipForward size={18} fill="currentColor" />
               </button>
 
@@ -2635,7 +2911,7 @@ export default function Home() {
                       player.seekTo(duration, true);
 
                       setTimeout(() => {
-                        nextSong();
+                        nextSongRef.current(false);
                       }, 200);
 
                       return;
