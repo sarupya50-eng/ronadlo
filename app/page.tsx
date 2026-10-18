@@ -1,9 +1,10 @@
 "use client";
-import { Heart, Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Music2, ListMusic, Volume2, Home as HomeIcon, Search, Library, Clock3, Sparkles, Disc3, MoreHorizontal, Headphones, ChevronRight, ChevronLeft } from "lucide-react";
+import { Heart, Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Music2, ListMusic, Volume2, Home as HomeIcon, Search, Library, Clock3, Sparkles, Disc3, MoreHorizontal, Headphones, ChevronRight, ChevronLeft, ChevronDown, Maximize2, SlidersHorizontal, VolumeX, Trash2, Pencil, Download, Upload, Check, ListPlus } from "lucide-react";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import YouTube, { YouTubePlayer } from "react-youtube";
 import "./home.css";
+import "./features.css";
 
 type Song = {
   id: string;
@@ -89,6 +90,84 @@ const featured = [
   },
 ];
 
+const genres = [
+  { name: "Bollywood", q: "bollywood hits", color: "#e8115b" },
+  { name: "Punjabi", q: "punjabi songs", color: "#dc148c" },
+  { name: "Hip-Hop", q: "hip hop hits", color: "#ba5d07" },
+  { name: "Pop", q: "pop hits", color: "#8d67ab" },
+  { name: "Lo-fi", q: "lofi beats", color: "#477d95" },
+  { name: "Rock", q: "rock classics", color: "#e13300" },
+  { name: "EDM", q: "edm party", color: "#1e3264" },
+  { name: "Workout", q: "workout music", color: "#4b5563" },
+  { name: "Romance", q: "romantic songs", color: "#af2896" },
+  { name: "Indie", q: "indie india", color: "#608108" },
+  { name: "Devotional", q: "devotional bhajan", color: "#7c3f58" },
+  { name: "Focus", q: "focus study music", color: "#006450" },
+];
+
+const accents: [string, string][] = [
+  ["Green", "#1ed760"],
+  ["Purple", "#a78bfa"],
+  ["Pink", "#f472b6"],
+  ["Blue", "#38bdf8"],
+  ["Orange", "#fb923c"],
+  ["Red", "#f87171"],
+  ["Yellow", "#facc15"],
+];
+
+function fmt(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+type SearchOutcome = { ok: boolean; results: Song[]; error?: string };
+
+const SEARCH_CACHE_TTL = 6 * 60 * 60 * 1000;
+
+// Every YouTube search costs API quota, so repeat searches are served from
+// this browser for six hours.
+async function fetchSongs(q: string): Promise<SearchOutcome> {
+  const key = `auralis:cache:${q.trim().toLowerCase()}`;
+
+  try {
+    const raw = localStorage.getItem(key);
+
+    if (raw) {
+      const cached = JSON.parse(raw);
+
+      if (
+        cached &&
+        Date.now() - cached.t < SEARCH_CACHE_TTL &&
+        Array.isArray(cached.results) &&
+        cached.results.length > 0
+      ) {
+        return { ok: true, results: cached.results };
+      }
+    }
+  } catch {
+    // cache unavailable — fall through to the network
+  }
+
+  const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const data = await response.json();
+
+  if (!response.ok) {
+    return { ok: false, results: [], error: data?.error };
+  }
+
+  const results: Song[] = data.results || [];
+
+  if (results.length > 0) {
+    try {
+      localStorage.setItem(key, JSON.stringify({ t: Date.now(), results }));
+    } catch {
+      // storage full — skip caching
+    }
+  }
+
+  return { ok: true, results };
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [songs, setSongs] = useState<Song[]>([]);
@@ -110,7 +189,7 @@ export default function Home() {
   const [queue, setQueue] = useState<Song[]>([]);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [showQueue, setShowQueue] = useState(false);
-  const [activeView, setActiveView] = useState<"home" | "search" | "liked" | "library" | "recent" | "made" | "albums">("home");
+  const [activeView, setActiveView] = useState<"home" | "search" | "liked" | "library" | "recent" | "made" | "albums" | "settings">("home");
   const [recentlyPlayed, setRecentlyPlayed] = useState<Song[]>([]);
   const [activePlaylist, setActivePlaylist] = useState<string | null>(null);
   const [selectedAtmosphere, setSelectedAtmosphere] = useState("Night Drive");
@@ -149,14 +228,10 @@ export default function Home() {
     setAtmosphereLoading(true);
 
     try {
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(queryText)}`
-      );
+      const outcome = await fetchSongs(queryText);
 
-      const data = await response.json();
-
-      if (response.ok) {
-        const results: Song[] = (data.results || []).slice(0, 8);
+      if (outcome.ok) {
+        const results: Song[] = outcome.results.slice(0, 8);
 
         setAtmosphereSongs((old) => ({ ...old, [name]: results }));
       }
@@ -199,12 +274,8 @@ export default function Home() {
     setQuery(item.title);
 
     try {
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(`${item.title} ${item.artist}`)}`
-      );
-
-      const data = await response.json();
-      const results: Song[] = data.results || [];
+      const outcome = await fetchSongs(`${item.title} ${item.artist}`);
+      const results: Song[] = outcome.results;
 
       if (results.length > 0) {
         setSongs(results);
@@ -238,6 +309,22 @@ export default function Home() {
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [playlistName, setPlaylistName] = useState("");
   const [volume, setVolume] = useState(0.8);
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const speedRef = useRef(1);
+  const [sleepEndsAt, setSleepEndsAt] = useState<number | null>(null);
+  const [showMore, setShowMore] = useState(false);
+  const [showNowPlaying, setShowNowPlaying] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [artistPlays, setArtistPlays] = useState<Record<string, number>>({});
+  const [accent, setAccent] = useState("#1ed760");
+  const previousSongRef = useRef<() => void>(() => {});
+  const npLyricRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [autoplay, setAutoplay] = useState(true);
+  const [moreLike, setMoreLike] = useState<Song[]>([]);
+  const importRef = useRef<HTMLInputElement | null>(null);
   const [progress, setProgress] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -384,27 +471,28 @@ export default function Home() {
   const lyricRefs = useRef<(HTMLDivElement | null)[]>([]);
 
 
-  async function search(e?: FormEvent) {
+  async function search(e?: FormEvent, override?: string) {
     e?.preventDefault();
 
-    if (!query.trim()) return;
+    const q = (override ?? query).trim();
+
+    if (!q) return;
 
     setSearching(true);
     setSearchError("");
 
     try {
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}`
-      );
+      const outcome = await fetchSongs(q);
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setSongs(data.results || []);
+      if (outcome.ok) {
+        setSongs(outcome.results);
+        setRecentSearches((old) =>
+          [q, ...old.filter((item) => item.toLowerCase() !== q.toLowerCase())].slice(0, 8)
+        );
       } else {
         setSongs([]);
         setSearchError(
-          data?.error || "Search failed. Please try again in a moment."
+          outcome.error || "Search failed. Please try again in a moment."
         );
       }
     } catch {
@@ -430,6 +518,11 @@ export default function Home() {
 
     setCurrentSong(song);
     setPlaying(true);
+
+    setArtistPlays((old) => ({
+      ...old,
+      [song.artist]: (old[song.artist] || 0) + 1,
+    }));
 
     setRecentlyPlayed((old) => [
       song,
@@ -630,6 +723,9 @@ export default function Home() {
   }
 
   function toggleLike(song: Song) {
+    const wasLiked = likedSongs.some((item) => item.id === song.id);
+    showToast(wasLiked ? "Removed from Liked Songs" : "Added to Liked Songs");
+
     setLikedSongs((old) =>
       old.some((item) => item.id === song.id)
         ? old.filter((item) => item.id !== song.id)
@@ -638,6 +734,10 @@ export default function Home() {
   }
 
   function addToQueue(song: Song) {
+    if (!queue.some((item) => item.id === song.id)) {
+      showToast("Added to queue");
+    }
+
     setQueue((old) => {
       if (old.some((item) => item.id === song.id)) {
         return old;
@@ -654,6 +754,295 @@ export default function Home() {
   function clearQueue() {
     setQueue([]);
   }
+
+  function showToast(message: string) {
+    setToast(message);
+
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  }
+
+  function runSearch(text: string) {
+    setQuery(text);
+    setActiveView("search");
+    search(undefined, text);
+  }
+
+  function playNext(song: Song) {
+    setQueue((old) => [song, ...old.filter((item) => item.id !== song.id)]);
+    showToast("Playing next");
+  }
+
+  function playAll(list: Song[], shuffled = false) {
+    if (list.length === 0) return;
+
+    const start = shuffled
+      ? list[Math.floor(Math.random() * list.length)]
+      : list[0];
+
+    if (shuffled) setShuffle(true);
+
+    setContextList(list);
+
+    if (currentSong?.id === start.id) {
+      restartCurrent();
+    } else {
+      playSong(start, list);
+    }
+  }
+
+  function saveQueueAsPlaylist() {
+    const toSave = [...(currentSong ? [currentSong] : []), ...queue];
+
+    if (toSave.length === 0) return;
+
+    const base = `Queue ${new Date().toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+    })}`;
+
+    let name = base;
+    let n = 2;
+
+    while (playlists.some((playlist) => playlist.name === name)) {
+      name = `${base} (${n++})`;
+    }
+
+    setPlaylists((old) => [...old, { name, songs: toSave }]);
+    showToast(`Saved as “${name}”`);
+  }
+
+  function renamePlaylist(current: string) {
+    const name = window.prompt("Rename playlist", current)?.trim();
+
+    if (!name || name === current) return;
+
+    if (playlists.some((playlist) => playlist.name === name)) {
+      showToast("A playlist with that name already exists");
+      return;
+    }
+
+    setPlaylists((old) =>
+      old.map((playlist) =>
+        playlist.name === current ? { ...playlist, name } : playlist
+      )
+    );
+    setActivePlaylist(name);
+    showToast("Playlist renamed");
+  }
+
+  function deletePlaylist(name: string) {
+    if (!window.confirm(`Delete “${name}”? This can't be undone.`)) return;
+
+    setPlaylists((old) => old.filter((playlist) => playlist.name !== name));
+    setActivePlaylist(null);
+    setSelectedPlaylistSongs([]);
+    showToast("Playlist deleted");
+  }
+
+  function copyLink(song: Song) {
+    navigator.clipboard
+      .writeText(`https://www.youtube.com/watch?v=${song.id}`)
+      .then(() => showToast("Link copied"))
+      .catch(() => showToast("Couldn't copy the link"));
+  }
+
+  function setSleepTimer(minutes: number | null) {
+    if (minutes === null) {
+      setSleepEndsAt(null);
+      showToast("Sleep timer off");
+      return;
+    }
+
+    setSleepEndsAt(Date.now() + minutes * 60000);
+    showToast(`Music will stop in ${minutes} minutes`);
+  }
+
+  function exportBackup() {
+    const data = {
+      app: "auralis",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      likedSongs,
+      playlists,
+      recentlyPlayed,
+      recentSearches,
+      artistPlays,
+      prefs: { volume, shuffle, repeat, accent, speed, autoplay },
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "auralis-backup.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    showToast("Backup downloaded");
+  }
+
+  function importBackup(file: File) {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+
+        if (data?.app !== "auralis") throw new Error("not an Auralis backup");
+
+        if (Array.isArray(data.likedSongs)) setLikedSongs(data.likedSongs);
+        if (Array.isArray(data.playlists)) setPlaylists(data.playlists);
+        if (Array.isArray(data.recentlyPlayed)) setRecentlyPlayed(data.recentlyPlayed);
+        if (Array.isArray(data.recentSearches)) setRecentSearches(data.recentSearches);
+
+        if (data.artistPlays && typeof data.artistPlays === "object") {
+          setArtistPlays(data.artistPlays);
+        }
+
+        if (typeof data.prefs?.accent === "string") setAccent(data.prefs.accent);
+
+        showToast("Backup restored");
+      } catch {
+        showToast("That file isn't a valid Auralis backup");
+      }
+    };
+
+    reader.readAsText(file);
+  }
+
+  function resetLibrary() {
+    if (
+      !window.confirm(
+        "Delete your liked songs, playlists and history from this browser? This can't be undone."
+      )
+    ) {
+      return;
+    }
+
+    setLikedSongs([]);
+    setPlaylists([]);
+    setRecentlyPlayed([]);
+    setRecentSearches([]);
+    setArtistPlays({});
+    setActivePlaylist(null);
+    showToast("Library reset");
+  }
+
+  function seekTo(value: number) {
+    const player = playerRef.current;
+
+    if (!player || !duration) return;
+
+    setProgress(value);
+    player.seekTo(value, true);
+
+    lastSyncTimeRef.current = value;
+    lastSyncAtRef.current = performance.now();
+    visualProgressRef.current = value;
+  }
+
+  function clearSearchCache() {
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith("auralis:cache:"))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch {
+      // storage blocked — nothing to clear
+    }
+
+    showToast("Search cache cleared");
+  }
+
+  // Autoplay: when a list runs out, keep going with more from the same artist
+  async function loadMoreLikeCurrent(list: Song[]) {
+    if (!currentSong) return;
+
+    try {
+      const outcome = await fetchSongs(`${currentSong.artist} songs`);
+      const fresh = outcome.results.filter(
+        (item) => !list.some((existing) => existing.id === item.id)
+      );
+
+      if (fresh.length > 0) {
+        setContextList([...list, ...fresh]);
+        showToast(`Autoplay: more from ${currentSong.artist}`);
+        playSong(fresh[0]);
+        return;
+      }
+    } catch {
+      // offline or out of quota — fall back to looping the list
+    }
+
+    if (list[0]) goToSong(list[0]);
+  }
+
+  function renderPlayActions(list: Song[], extra?: React.ReactNode) {
+    if (list.length === 0 && !extra) return null;
+
+    return (
+      <div className="fx-actions">
+        {list.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="fx-play-big"
+              onClick={() => playAll(list)}
+              aria-label="Play all"
+              title="Play all"
+            >
+              <Play size={24} fill="currentColor" />
+            </button>
+
+            <button
+              type="button"
+              className="fx-icon-btn"
+              onClick={() => playAll(list, true)}
+              aria-label="Shuffle play"
+              title="Shuffle play"
+            >
+              <Shuffle size={22} />
+            </button>
+          </>
+        )}
+
+        {extra}
+      </div>
+    );
+  }
+
+  const topArtists = Object.entries(artistPlays)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name]) => name);
+  const topArtist = topArtists[0] || "";
+
+  const npLines: { time: number; text: string }[] = syncedLyrics.length
+    ? syncedLyrics
+    : lyrics.map((text) => ({ time: 0, text }));
+
+  // "More like your favourite artist" shelf on Home
+  useEffect(() => {
+    if (!hydrated || !topArtist) return;
+
+    let cancelled = false;
+
+    fetchSongs(`${topArtist} songs`)
+      .then((outcome) => {
+        if (!cancelled) setMoreLike(outcome.results.slice(0, 12));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, topArtist]);
 
   function restartCurrent() {
     const player = playerRef.current;
@@ -711,6 +1100,16 @@ export default function Home() {
       return;
     }
 
+    if (auto && autoplay && !shuffle && currentSong) {
+      const list = contextList.length > 0 ? contextList : songs;
+      const index = list.findIndex((item) => item.id === currentSong.id);
+
+      if (list.length > 0 && index === list.length - 1) {
+        loadMoreLikeCurrent(list);
+        return;
+      }
+    }
+
     const next = pickNeighbour(1);
 
     if (next) {
@@ -749,6 +1148,7 @@ export default function Home() {
 
   // Always point at the latest closure (queue, shuffle, repeat, lists)
   nextSongRef.current = nextSong;
+  previousSongRef.current = previousSong;
 
   useEffect(() => {
     playingRef.current = playing;
@@ -767,8 +1167,15 @@ export default function Home() {
       const savedPlaylists = read("auralis:playlists");
       const savedRecent = read("auralis:recent");
       const prefs = read("auralis:prefs");
+      const savedSearches = read("auralis:searches");
+      const savedPlays = read("auralis:plays");
 
       if (Array.isArray(savedLiked)) setLikedSongs(savedLiked);
+      if (Array.isArray(savedSearches)) setRecentSearches(savedSearches);
+
+      if (savedPlays && typeof savedPlays === "object" && !Array.isArray(savedPlays)) {
+        setArtistPlays(savedPlays);
+      }
       if (Array.isArray(savedPlaylists)) setPlaylists(savedPlaylists);
       if (Array.isArray(savedRecent)) setRecentlyPlayed(savedRecent);
 
@@ -776,6 +1183,9 @@ export default function Home() {
         if (typeof prefs.volume === "number") setVolume(prefs.volume);
         if (typeof prefs.shuffle === "boolean") setShuffle(prefs.shuffle);
         if (typeof prefs.repeat === "boolean") setRepeat(prefs.repeat);
+        if (typeof prefs.accent === "string") setAccent(prefs.accent);
+        if (typeof prefs.speed === "number") setSpeed(prefs.speed);
+        if (typeof prefs.autoplay === "boolean") setAutoplay(prefs.autoplay);
       }
     } catch {
       // corrupted storage — start fresh
@@ -793,12 +1203,27 @@ export default function Home() {
       localStorage.setItem("auralis:recent", JSON.stringify(recentlyPlayed));
       localStorage.setItem(
         "auralis:prefs",
-        JSON.stringify({ volume, shuffle, repeat })
+        JSON.stringify({ volume, shuffle, repeat, accent, speed, autoplay })
       );
+      localStorage.setItem("auralis:searches", JSON.stringify(recentSearches));
+      localStorage.setItem("auralis:plays", JSON.stringify(artistPlays));
     } catch {
       // storage full or blocked — ignore
     }
-  }, [hydrated, likedSongs, playlists, recentlyPlayed, volume, shuffle, repeat]);
+  }, [
+    hydrated,
+    likedSongs,
+    playlists,
+    recentlyPlayed,
+    volume,
+    shuffle,
+    repeat,
+    accent,
+    speed,
+    autoplay,
+    recentSearches,
+    artistPlays,
+  ]);
 
   // Keyboard shortcuts: Space = play/pause, Shift+→ / Shift+← = next / previous
   useEffect(() => {
@@ -824,11 +1249,139 @@ export default function Home() {
       if (event.shiftKey && event.code === "ArrowLeft") {
         previousSong();
       }
+
+      if (event.key === "/") {
+        event.preventDefault();
+        (
+          document.querySelector(".topbar-search input") as HTMLInputElement | null
+        )?.focus();
+      }
+
+      if (event.key === "Escape") {
+        setShowNowPlaying(false);
+        setShowMore(false);
+      }
+
+      const player = playerRef.current;
+
+      if (player && currentSong && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.key === "j") {
+          player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
+        }
+
+        if (event.key === "l") {
+          player.seekTo(player.getCurrentTime() + 10, true);
+        }
+
+        if (event.key === "k") {
+          setPlaying((value) => !value);
+        }
+
+        if (event.key === "m") {
+          setMuted((value) => !value);
+        }
+      }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [currentSong, contextList, songs]);
+
+  // Accent color
+  useEffect(() => {
+    document.documentElement.style.setProperty("--green", accent);
+    document.documentElement.style.setProperty(
+      "--green-hover",
+      `color-mix(in srgb, ${accent} 78%, white)`
+    );
+  }, [accent]);
+
+  // Tab title shows what's playing
+  useEffect(() => {
+    document.title = currentSong
+      ? `${playing ? "▶ " : ""}${currentSong.title} • Auralis`
+      : "Auralis — Music";
+  }, [currentSong, playing]);
+
+  // Media keys, lock screen and headset controls
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    if (!currentSong) return;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentSong.title,
+      artist: currentSong.artist,
+      artwork: currentSong.thumbnail
+        ? [{ src: currentSong.thumbnail, sizes: "480x360", type: "image/jpeg" }]
+        : [],
+    });
+
+    navigator.mediaSession.playbackState = playing ? "playing" : "paused";
+
+    navigator.mediaSession.setActionHandler("play", () => setPlaying(true));
+    navigator.mediaSession.setActionHandler("pause", () => setPlaying(false));
+    navigator.mediaSession.setActionHandler("nexttrack", () => nextSongRef.current(false));
+    navigator.mediaSession.setActionHandler("previoustrack", () => previousSongRef.current());
+  }, [currentSong, playing]);
+
+  // Sleep timer
+  useEffect(() => {
+    if (!sleepEndsAt) return;
+
+    const timer = setInterval(() => {
+      if (Date.now() >= sleepEndsAt) {
+        setPlaying(false);
+        setSleepEndsAt(null);
+        showToast("Sleep timer ended. Playback paused.");
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [sleepEndsAt]);
+
+  // Playback speed and mute
+  useEffect(() => {
+    speedRef.current = speed;
+
+    try {
+      playerRef.current?.setPlaybackRate(speed);
+    } catch {
+      // player not ready yet
+    }
+  }, [speed]);
+
+  useEffect(() => {
+    try {
+      if (muted) playerRef.current?.mute();
+      else playerRef.current?.unMute();
+    } catch {
+      // player not ready yet
+    }
+  }, [muted]);
+
+  // Close the speed / sleep menu when clicking elsewhere
+  useEffect(() => {
+    if (!showMore) return;
+
+    const close = (event: PointerEvent) => {
+      if (!(event.target as HTMLElement).closest(".fx-more-wrap")) {
+        setShowMore(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [showMore]);
+
+  // Keep the active line centered in the full screen player
+  useEffect(() => {
+    if (!showNowPlaying || activeLyric < 0) return;
+
+    npLyricRefs.current[activeLyric]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [activeLyric, showNowPlaying]);
 
   useEffect(() => {
     seekingRef.current = seeking;
@@ -907,7 +1460,7 @@ export default function Home() {
           }
         }
       } else if (playingRef.current && !seekingRef.current) {
-        const elapsed = (now - lastSyncAtRef.current) / 1000;
+        const elapsed = ((now - lastSyncAtRef.current) / 1000) * speedRef.current;
         const interpolated = lastSyncTimeRef.current + elapsed;
         visualProgressRef.current = interpolated;
         setProgress(interpolated);
@@ -949,7 +1502,7 @@ export default function Home() {
 
 
   useEffect(() => {
-    if (!currentSong || !showLyrics) return;
+    if (!currentSong || (!showLyrics && !showNowPlaying)) return;
 
     const song = currentSong;
     let cancelled = false;
@@ -1064,7 +1617,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [currentSong, showLyrics]);
+  }, [currentSong, showLyrics, showNowPlaying]);
 
   function startLyricsDrag(
     e: React.PointerEvent<HTMLDivElement>
@@ -1195,6 +1748,36 @@ export default function Home() {
               }}
             >
               {liked.includes(optionsSong.id) ? "♥ Unlike" : "♡ Like"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playNext(optionsSong);
+                setOptionsSong(null);
+              }}
+            >
+              ⏭ Play next
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                runSearch(optionsSong.artist);
+                setOptionsSong(null);
+              }}
+            >
+              ♪ More from {optionsSong.artist}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                copyLink(optionsSong);
+                setOptionsSong(null);
+              }}
+            >
+              ⧉ Copy link
             </button>
 
             <button
@@ -1404,6 +1987,17 @@ export default function Home() {
               <span>Artists</span>
             </button>
 
+            <button
+              className={`as-nav-item ${activeView === "settings" ? "active" : ""}`}
+              onClick={() => setActiveView("settings")}
+            >
+              <span className="as-icon">
+                <SlidersHorizontal size={19} strokeWidth={1.8} />
+              </span>
+
+              <span>Settings</span>
+            </button>
+
           </nav>
 
 
@@ -1453,7 +2047,7 @@ export default function Home() {
           )}
 
 
-          <div className="as-profile">
+          <div className="as-profile" onClick={() => setActiveView("settings")}>
 
             <div className="as-profile-avatar">
               A
@@ -1504,7 +2098,15 @@ export default function Home() {
             </form>
           </div>
 
-          <div className="topbar-badge" title="Auralis">A</div>
+          <button
+            type="button"
+            className="topbar-badge"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => setActiveView("settings")}
+          >
+            A
+          </button>
         </header>
 
         {activeView === "home" && (
@@ -1605,6 +2207,54 @@ export default function Home() {
                 No songs found for “{query}”. Try a different spelling or artist.
               </div>
             )}
+
+            {recentSearches.length > 0 && (
+              <div className="fx-recent">
+                <div className="fx-recent-head">
+                  <h3>Recent searches</h3>
+                  <button
+                    type="button"
+                    className="hx-link"
+                    onClick={() => setRecentSearches([])}
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="fx-chips">
+                  {recentSearches.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className="fx-chip"
+                      onClick={() => runSearch(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {songs.length === 0 && !searching && (
+              <div className="fx-browse">
+                <h3>Browse all</h3>
+
+                <div className="fx-genres">
+                  {genres.map((genre) => (
+                    <button
+                      key={genre.name}
+                      type="button"
+                      className="fx-genre"
+                      style={{ background: genre.color }}
+                      onClick={() => runSearch(genre.q)}
+                    >
+                      <span>{genre.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -1615,7 +2265,29 @@ export default function Home() {
                 <span className="section-label">SEARCH RESULTS</span>
                 <h2>Results for “{query}”</h2>
               </div>
-              <span>{songs.length} songs</span>
+              <div className="fx-heading-actions">
+                <span>{songs.length} songs</span>
+
+                <button
+                  type="button"
+                  className="fx-icon-btn small"
+                  onClick={() => playAll(songs, true)}
+                  aria-label="Shuffle results"
+                  title="Shuffle results"
+                >
+                  <Shuffle size={18} />
+                </button>
+
+                <button
+                  type="button"
+                  className="fx-play-big small"
+                  onClick={() => playAll(songs)}
+                  aria-label="Play all results"
+                  title="Play all"
+                >
+                  <Play size={18} fill="currentColor" />
+                </button>
+              </div>
             </div>
 
             <div className="song-list">
@@ -1720,6 +2392,8 @@ export default function Home() {
               </div>
             </div>
 
+            {renderPlayActions(likedSongs)}
+
             {liked.length > 0 ? (
               <div className="library-list">
                 {likedSongs
@@ -1773,6 +2447,8 @@ export default function Home() {
               <h1>Recently Played</h1>
               <p>Your latest listening history.</p>
             </div>
+
+            {renderPlayActions(recentlyPlayed)}
 
             {recentlyPlayed.length > 0 ? (
               <div className="library-list">
@@ -1841,6 +2517,31 @@ export default function Home() {
                       <p>{playlist.songs.length} songs</p>
                     </div>
                   </div>
+
+                  {renderPlayActions(
+                    playlist.songs,
+                    <>
+                      <button
+                        type="button"
+                        className="fx-icon-btn"
+                        onClick={() => renamePlaylist(playlist.name)}
+                        aria-label="Rename playlist"
+                        title="Rename playlist"
+                      >
+                        <Pencil size={20} />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="fx-icon-btn fx-danger"
+                        onClick={() => deletePlaylist(playlist.name)}
+                        aria-label="Delete playlist"
+                        title="Delete playlist"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </>
+                  )}
 
                   {playlist.songs.length > 0 ? (
                     <>
@@ -2056,6 +2757,165 @@ export default function Home() {
           </section>
         )}
 
+        {activeView === "settings" && (
+          <section className="library-page fx-settings">
+            <div className="library-heading">
+              <h1>Settings</h1>
+              <p>Make Auralis yours. Everything is saved in this browser.</p>
+            </div>
+
+            <div className="fx-card">
+              <h3>Accent color</h3>
+
+              <div className="fx-swatches">
+                {accents.map(([name, color]) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`fx-swatch ${accent === color ? "on" : ""}`}
+                    style={{ background: color }}
+                    onClick={() => setAccent(color)}
+                    aria-label={name}
+                    title={name}
+                  >
+                    {accent === color && <Check size={18} strokeWidth={3} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="fx-card">
+              <h3>Playback</h3>
+
+              <label className="fx-row">
+                <span>
+                  <b>Autoplay</b>
+                  <small>
+                    Keep playing more from the same artist when your list ends
+                  </small>
+                </span>
+
+                <input
+                  type="checkbox"
+                  className="fx-switch"
+                  checked={autoplay}
+                  onChange={(e) => setAutoplay(e.target.checked)}
+                />
+              </label>
+
+              <div className="fx-row">
+                <span>
+                  <b>Speed</b>
+                  <small>Applies to every song</small>
+                </span>
+
+                <div className="fx-pills">
+                  {[0.75, 1, 1.25, 1.5, 2].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`fx-pill ${speed === value ? "on" : ""}`}
+                      onClick={() => setSpeed(value)}
+                    >
+                      {value}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="fx-card">
+              <h3>Your data</h3>
+
+              <p className="fx-muted">
+                Liked songs, playlists and history live in this browser only.
+                Download a backup to move them to another device.
+              </p>
+
+              <div className="fx-btn-row">
+                <button
+                  type="button"
+                  className="hx-btn hx-btn-ghost"
+                  onClick={exportBackup}
+                >
+                  <Download size={17} />
+                  Download backup
+                </button>
+
+                <button
+                  type="button"
+                  className="hx-btn hx-btn-ghost"
+                  onClick={() => importRef.current?.click()}
+                >
+                  <Upload size={17} />
+                  Restore backup
+                </button>
+
+                <button
+                  type="button"
+                  className="hx-btn hx-btn-ghost"
+                  onClick={clearSearchCache}
+                >
+                  Clear search cache
+                </button>
+
+                <input
+                  ref={importRef}
+                  type="file"
+                  accept="application/json,.json"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+
+                    if (file) importBackup(file);
+
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="fx-card">
+              <h3>Keyboard shortcuts</h3>
+
+              <ul className="fx-keys">
+                {[
+                  ["Space or K", "Play / pause"],
+                  ["Shift + →", "Next song"],
+                  ["Shift + ←", "Previous song"],
+                  ["J / L", "Back / forward 10 seconds"],
+                  ["M", "Mute"],
+                  ["/", "Search"],
+                  ["Esc", "Close full screen player"],
+                ].map(([keys, action]) => (
+                  <li key={keys}>
+                    <kbd>{keys}</kbd>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="fx-card fx-card-danger">
+              <h3>Reset</h3>
+
+              <p className="fx-muted">
+                Delete your liked songs, playlists and history from this
+                browser. Download a backup first if you might want them back.
+              </p>
+
+              <button
+                type="button"
+                className="hx-btn fx-btn-danger"
+                onClick={resetLibrary}
+              >
+                <Trash2 size={17} />
+                Reset my library
+              </button>
+            </div>
+          </section>
+        )}
+
         {activeView === "albums" &&
           (() => {
             const pool = [
@@ -2174,6 +3034,78 @@ export default function Home() {
                         )}
                       </span>
                     </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {activeView === "home" && topArtists.length > 0 && (
+              <section className="section hx-section">
+                <div className="section-heading">
+                  <div>
+                    <h2>Your top artists</h2>
+                  </div>
+                </div>
+
+                <div className="fx-artists">
+                  {topArtists.map((name) => {
+                    const art = [...recentlyPlayed, ...likedSongs].find(
+                      (item) => item.artist === name
+                    )?.thumbnail;
+
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        className="fx-artist"
+                        onClick={() => runSearch(name)}
+                      >
+                        <span className="fx-artist-art">
+                          {art ? (
+                            <img src={art} alt="" />
+                          ) : (
+                            <span>{name.charAt(0).toUpperCase()}</span>
+                          )}
+                        </span>
+
+                        <strong>{name}</strong>
+                        <small>Artist</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {activeView === "home" && moreLike.length > 0 && (
+              <section className="section hx-section">
+                <div className="section-heading">
+                  <div>
+                    <h2>More like {topArtist}</h2>
+                  </div>
+                </div>
+
+                <div className="hx-carousel">
+                  {moreLike.map((song) => (
+                    <div className="hx-card" key={song.id}>
+                      <button
+                        type="button"
+                        className="hx-card-art"
+                        aria-label={`Play ${song.title} by ${song.artist}`}
+                        onClick={() => playSong(song, moreLike)}
+                      >
+                        {song.thumbnail && (
+                          <img src={song.thumbnail} alt="" loading="lazy" />
+                        )}
+
+                        <span className="hx-card-play">
+                          <Play size={22} fill="currentColor" />
+                        </span>
+                      </button>
+
+                      <strong>{song.title}</strong>
+                      <span>{song.artist}</span>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -2721,12 +3653,34 @@ export default function Home() {
               <h3>Queue</h3>
             </div>
 
-            <button
-              className="queue-close"
-              onClick={() => setShowQueue(false)}
-            >
-              ×
-            </button>
+            <div className="fx-queue-tools">
+              <button
+                type="button"
+                className="fx-icon-btn small"
+                onClick={saveQueueAsPlaylist}
+                aria-label="Save queue as playlist"
+                title="Save queue as playlist"
+              >
+                <ListPlus size={18} />
+              </button>
+
+              <button
+                type="button"
+                className="fx-icon-btn small"
+                onClick={clearQueue}
+                aria-label="Clear queue"
+                title="Clear queue"
+              >
+                <Trash2 size={17} />
+              </button>
+
+              <button
+                className="queue-close"
+                onClick={() => setShowQueue(false)}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           <div className="queue-list">
@@ -2799,6 +3753,170 @@ export default function Home() {
         </div>
       )}
 
+      {showNowPlaying && currentSong && (
+        <div className="fx-np" role="dialog" aria-label="Now playing">
+          <div
+            className="fx-np-bg"
+            style={
+              currentSong.thumbnail
+                ? { backgroundImage: `url("${currentSong.thumbnail}")` }
+                : undefined
+            }
+          />
+          <div className="fx-np-shade" />
+
+          <div className="fx-np-inner">
+            <div className="fx-np-top">
+              <button
+                type="button"
+                className="fx-icon-btn"
+                onClick={() => setShowNowPlaying(false)}
+                aria-label="Close full screen player"
+                title="Close (Esc)"
+              >
+                <ChevronDown size={26} />
+              </button>
+
+              <span>Now playing</span>
+            </div>
+
+            <div className="fx-np-main">
+              <div className="fx-np-left">
+                <div className={`fx-np-art ${playing ? "on" : ""}`}>
+                  {currentSong.thumbnail ? (
+                    <img src={currentSong.thumbnail} alt="" />
+                  ) : (
+                    <span>♫</span>
+                  )}
+                </div>
+
+                <div className="fx-np-meta">
+                  <div>
+                    <h2>{currentSong.title}</h2>
+                    <p>{currentSong.artist}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    className={`fx-icon-btn ${
+                      liked.includes(currentSong.id) ? "fx-liked" : ""
+                    }`}
+                    onClick={() => toggleLike(currentSong)}
+                    aria-label="Like"
+                  >
+                    <Heart
+                      size={24}
+                      fill={
+                        liked.includes(currentSong.id) ? "currentColor" : "none"
+                      }
+                    />
+                  </button>
+                </div>
+
+                <div className="fx-np-seek">
+                  <span>{fmt(progress)}</span>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max={duration || 100}
+                    step="0.1"
+                    value={progress}
+                    aria-label="Seek"
+                    onPointerDown={() => setSeeking(true)}
+                    onPointerUp={() => setSeeking(false)}
+                    onPointerCancel={() => setSeeking(false)}
+                    onChange={(e) => seekTo(Number(e.target.value))}
+                    style={{
+                      ["--fill" as string]: `${
+                        duration > 0
+                          ? Math.min(100, (progress / duration) * 100)
+                          : 0
+                      }%`,
+                    } as React.CSSProperties}
+                  />
+
+                  <span>{fmt(duration)}</span>
+                </div>
+
+                <div className="fx-np-controls">
+                  <button
+                    type="button"
+                    className={shuffle ? "on" : ""}
+                    onClick={() => setShuffle((value) => !value)}
+                    aria-label="Shuffle"
+                  >
+                    <Shuffle size={22} />
+                  </button>
+
+                  <button type="button" onClick={previousSong} aria-label="Previous">
+                    <SkipBack size={28} fill="currentColor" />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="fx-np-play"
+                    onClick={() => setPlaying(!playing)}
+                    aria-label="Play or pause"
+                  >
+                    {playing ? (
+                      <Pause size={28} fill="currentColor" />
+                    ) : (
+                      <Play size={28} fill="currentColor" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => nextSong(false)}
+                    aria-label="Next"
+                  >
+                    <SkipForward size={28} fill="currentColor" />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={repeat ? "on" : ""}
+                    onClick={() => setRepeat((value) => !value)}
+                    aria-label="Repeat"
+                  >
+                    <Repeat size={22} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="fx-np-lyrics">
+                {lyricsLoading ? (
+                  <div className="fx-np-note">Finding lyrics…</div>
+                ) : lyricsError || npLines.length === 0 ? (
+                  <div className="fx-np-note">
+                    No lyrics found for this song. Try another version of the
+                    track.
+                  </div>
+                ) : (
+                  npLines.map((line, index) => (
+                    <div
+                      key={`${line.text}-${index}`}
+                      ref={(element) => {
+                        npLyricRefs.current[index] = element;
+                      }}
+                      className={`fx-np-line ${
+                        index === activeLyric ? "active" : ""
+                      }`}
+                      onClick={() => {
+                        if (syncedLyrics.length) seekTo(line.time);
+                      }}
+                    >
+                      {line.text}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {currentSong && (
         <>
           <YouTube
@@ -2816,6 +3934,13 @@ export default function Home() {
               playerRef.current = event.target;
 
               event.target.setVolume(volume * 100);
+
+              try {
+                event.target.setPlaybackRate(speedRef.current);
+                if (muted) event.target.mute();
+              } catch {
+                // ignore
+              }
               setDuration(event.target.getDuration());
 
               if (playing) {
@@ -2825,6 +3950,12 @@ export default function Home() {
             onStateChange={(event) => {
               if (event.data === 1) {
                 setPlaying(true);
+
+                try {
+                  event.target.setPlaybackRate(speedRef.current);
+                } catch {
+                  // ignore
+                }
               }
 
               if (event.data === 2) {
@@ -2857,7 +3988,13 @@ export default function Home() {
 
         <div className="player">
           <div className="player-song">
-            <div className={`player-cover ${playing ? "playing" : ""}`}>
+            <div
+              className={`player-cover ${playing ? "playing" : ""}`}
+              onClick={() => setShowNowPlaying(true)}
+              role="button"
+              tabIndex={0}
+              title="Open full screen player"
+            >
               {currentSong.thumbnail && (
                 <img src={currentSong.thumbnail} alt="" />
               )}
@@ -3007,13 +4144,115 @@ export default function Home() {
                 <b className="queue-count">{queue.length}</b>
               )}
             </button>
+
+            <div className="fx-more-wrap">
+              <button
+                type="button"
+                className={`lyrics-button ${
+                  showMore || speed !== 1 || sleepEndsAt ? "active" : ""
+                }`}
+                onClick={() => setShowMore((value) => !value)}
+                aria-label="Speed and sleep timer"
+                aria-expanded={showMore}
+              >
+                <SlidersHorizontal size={15} />
+                {speed !== 1 && <span>{speed}x</span>}
+              </button>
+
+              {showMore && (
+                <div className="fx-more-menu" role="menu">
+                  <div className="fx-menu-group">
+                    <b>Playback speed</b>
+
+                    <div className="fx-pills">
+                      {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`fx-pill ${speed === value ? "on" : ""}`}
+                          onClick={() => setSpeed(value)}
+                        >
+                          {value}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="fx-menu-group">
+                    <b>
+                      Sleep timer
+                      {sleepEndsAt
+                        ? ` · stops at ${new Date(sleepEndsAt).toLocaleTimeString(
+                            [],
+                            { hour: "numeric", minute: "2-digit" }
+                          )}`
+                        : ""}
+                    </b>
+
+                    <div className="fx-pills">
+                      {[15, 30, 45, 60].map((minutes) => (
+                        <button
+                          key={minutes}
+                          type="button"
+                          className="fx-pill"
+                          onClick={() => {
+                            setSleepTimer(minutes);
+                            setShowMore(false);
+                          }}
+                        >
+                          {minutes} min
+                        </button>
+                      ))}
+
+                      {sleepEndsAt && (
+                        <button
+                          type="button"
+                          className="fx-pill on"
+                          onClick={() => {
+                            setSleepTimer(null);
+                            setShowMore(false);
+                          }}
+                        >
+                          Turn off
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="lyrics-button"
+              onClick={() => {
+                setShowLyrics(false);
+                setShowNowPlaying(true);
+              }}
+              aria-label="Full screen player"
+              title="Full screen player"
+            >
+              <Maximize2 size={15} />
+            </button>
           </div>
 
 
               
 
           <div className="player-volume">
-            <Volume2 size={18} />
+            <button
+              type="button"
+              className="fx-mute"
+              onClick={() => setMuted((value) => !value)}
+              aria-label={muted ? "Unmute" : "Mute"}
+              title={muted ? "Unmute (M)" : "Mute (M)"}
+            >
+              {muted || volume === 0 ? (
+                <VolumeX size={18} />
+              ) : (
+                <Volume2 size={18} />
+              )}
+            </button>
             <input
               type="range"
               min="0"
@@ -3054,6 +4293,11 @@ export default function Home() {
 
         </div>
         </>
+      )}
+      {toast && (
+        <div className="fx-toast" role="status" aria-live="polite">
+          {toast}
+        </div>
       )}
     </main>
   );
