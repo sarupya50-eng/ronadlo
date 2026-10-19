@@ -1,3 +1,4 @@
+```yaml
 name: Build Auralis Jamendo for Windows
 
 on:
@@ -9,9 +10,12 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout desktop app
         uses: actions/checkout@v4
+        with:
+          ref: desktop-clean
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -35,5 +39,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Auralis-Jamendo-Windows-x64
-          path: release/Auralis-Jamendo-Setup.exe
+          path: release/*.exe
           if-no-files-found: error
+```
