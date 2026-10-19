@@ -1,0 +1,39 @@
+name: Build Auralis Jamendo for Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Prepare desktop files
+        run: npm run desktop:prepare
+
+      - name: Package Windows installer
+        run: npx electron-builder --win nsis --x64
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Auralis-Jamendo-Windows-x64
+          path: release/Auralis-Jamendo-Setup.exe
+          if-no-files-found: error

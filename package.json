@@ -1,0 +1,63 @@
+{
+  "name": "auralis-jamendo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "desktop:prepare": "node scripts/prepare-desktop.cjs",
+    "desktop:build": "npm run build && npm run desktop:prepare && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "lucide-react": "^1.43.0",
+    "next": "16.3.1",
+    "next-auth": "^5.0.0-beta.32",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-youtube": "^10.1.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "node": "^26.12.0",
+    "typescript": "^5"
+  },
+  "main": "main.cjs",
+  "build": {
+    "appId": "com.auralis.jamendo",
+    "productName": "Auralis Jamendo",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop/next-app",
+        "to": "next-app"
+      },
+      {
+        "from": "desktop/node-runtime",
+        "to": "node-runtime"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Auralis-Jamendo-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
