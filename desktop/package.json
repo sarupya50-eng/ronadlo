@@ -1,0 +1,77 @@
+{
+  "name": "auralis-desktop",
+  "productName": "Auralis",
+  "version": "1.0.0",
+  "description": "Auralis Music for Windows",
+  "author": "Auralis",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prepare-server": "node prepare.js",
+    "dist": "node prepare.js && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.auralis.music",
+    "afterPack": "afterPack.js",
+    "productName": "Auralis",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "afterPack.js",
+      "preload.js",
+      "setup.html",
+      "setup.js",
+      "loading.html",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../.next/standalone",
+        "to": "server",
+        "filter": [
+          "**/*",
+          ".next/**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Auralis",
+      "artifactName": "Auralis-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Auralis-Portable-${version}.${ext}"
+    }
+  }
+}

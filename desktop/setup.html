@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Auralis setup</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<style>
+html,body{margin:0;height:100%;background:#121212;color:#fff;font-family:Segoe UI,system-ui,sans-serif}
+main{max-width:480px;margin:0 auto;padding:40px 28px}
+.logo{width:56px;height:56px;border-radius:14px;background:#1ed760;color:#000;font-size:32px;font-weight:800;display:grid;place-items:center;margin-bottom:18px}
+h1{margin:0 0 8px;font-size:26px}p,li{color:#b3b3b3;line-height:1.5;font-size:14px}
+input{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:8px;border:1px solid #444;background:#1f1f1f;color:#fff;font-size:15px;margin:14px 0 10px}
+input:focus{outline:2px solid #1ed760}
+button{background:#1ed760;color:#000;border:0;border-radius:999px;padding:12px 26px;font-weight:700;font-size:15px;cursor:pointer}
+button:disabled{opacity:.5}button.link{background:none;color:#1ed760;padding:0;font-weight:600;font-size:14px;text-decoration:underline}
+#msg{min-height:20px;color:#ff6b6b;font-size:13px;margin:8px 0}
+</style></head>
+<body><main>
+<div class="logo">A</div>
+<h1>Welcome to Auralis</h1>
+<p>Auralis finds songs through the YouTube Data API. Paste your free API key once and you're done.</p>
+<ol><li>Open the <button class="link" id="get">Google Cloud credentials page</button></li>
+<li>Enable “YouTube Data API v3”, then create an API key</li></ol>
+<input id="key" placeholder="AIza…" autocomplete="off" spellcheck="false">
+<div id="msg"></div>
+<button id="save">Save and start</button>
+<button class="link" id="force" style="display:none;margin-left:14px">Save anyway</button>
+</main><script src="setup.js"></script></body></html>
