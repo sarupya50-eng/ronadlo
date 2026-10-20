@@ -32,9 +32,20 @@ jobs:
       - name: Prepare desktop files
         run: npm run desktop:prepare
 
+      - name: Verify Next.js dependency
+        shell: pwsh
+        run: |
+          $p = "desktop/next-app/node_modules/next/package.json"
+          if (!(Test-Path $p)) {
+            Write-Error "Next.js is missing after preparation: $p"
+            exit 1
+          }
+          Write-Host "Next.js dependency exists."
+          Get-Content $p -TotalCount 5
+
       - name: Package Windows installer
         run: npx electron-builder --win nsis --x64 --publish never
-        
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
