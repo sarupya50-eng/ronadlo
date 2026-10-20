@@ -13,12 +13,12 @@ jobs:
 
     steps:
       - name: Checkout desktop app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: desktop-clean
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -41,13 +41,23 @@ jobs:
             exit 1
           }
           Write-Host "Next.js dependency exists."
-          Get-Content $p -TotalCount 5
 
       - name: Package Windows installer
         run: npx electron-builder --win nsis --x64 --publish never
 
+      - name: Verify packaged application
+        shell: pwsh
+        run: |
+          $p = "release/win-unpacked/resources/next-app/node_modules/next/package.json"
+          if (!(Test-Path $p)) {
+            Write-Error "Next.js is missing from the packaged application: $p"
+            Get-ChildItem "release/win-unpacked/resources/next-app" -Force | Select-Object Name
+            exit 1
+          }
+          Write-Host "SUCCESS: Next.js exists in the packaged application."
+
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Auralis-Jamendo-Windows-x64
           path: release/*.exe
