@@ -1044,6 +1044,49 @@ export default function Home() {
     };
   }, [hydrated, topArtist]);
 
+  // Install as an app (Chrome / Edge / Android show a real install prompt)
+  type InstallEvent = Event & {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: string }>;
+  };
+
+  const [installEvent, setInstallEvent] = useState<InstallEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+    setInstalled(standalone);
+
+    const onPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as InstallEvent);
+    };
+
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallEvent(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  async function installApp() {
+    if (!installEvent) return;
+
+    await installEvent.prompt();
+    await installEvent.userChoice;
+    setInstallEvent(null);
+  }
+
   function restartCurrent() {
     const player = playerRef.current;
 
@@ -2873,6 +2916,53 @@ export default function Home() {
                   }}
                 />
               </div>
+            </div>
+
+            <div className="fx-card">
+              <h3>Install app</h3>
+
+              {installed ? (
+                <p className="fx-muted">
+                  Auralis is installed on this device. Open it from your
+                  desktop or home screen.
+                </p>
+              ) : (
+                <>
+                  <p className="fx-muted">
+                    Add Auralis to your device. It opens in its own window with
+                    its own icon, like any other app.
+                  </p>
+
+                  {installEvent ? (
+                    <button
+                      type="button"
+                      className="hx-btn hx-btn-primary"
+                      onClick={installApp}
+                    >
+                      <Download size={17} />
+                      Install Auralis
+                    </button>
+                  ) : (
+                    <ul className="fx-keys">
+                      <li>
+                        <kbd>Windows / Mac</kbd>
+                        <span>
+                          Use Chrome or Edge and click the install icon at the
+                          right end of the address bar
+                        </span>
+                      </li>
+                      <li>
+                        <kbd>Android</kbd>
+                        <span>Tap ⋮, then Install app</span>
+                      </li>
+                      <li>
+                        <kbd>iPhone</kbd>
+                        <span>Tap Share, then Add to Home Screen</span>
+                      </li>
+                    </ul>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="fx-card">

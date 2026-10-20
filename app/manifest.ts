@@ -1,0 +1,22 @@
+import type { MetadataRoute } from "next";
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    id: "/",
+    name: "Auralis Music",
+    short_name: "Auralis",
+    description: "Ad-free music discovery and playback.",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "any",
+    background_color: "#000000",
+    theme_color: "#000000",
+    categories: ["music", "entertainment"],
+    icons: [
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  };
+}
